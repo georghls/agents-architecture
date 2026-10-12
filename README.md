@@ -1,12 +1,12 @@
 # Engenharia de Software para IA: Sistemas Multi-Agentes (MCP e LLMOps)
 
-Repositório do estudo dirigido (**UNICAMP**) focado no projeto, integração segura e operação de arquiteturas multiagentes para consulta a bases documentais corporativas com controle de acesso estrito (RBAC).
+Repositório do estudo dirigido focado no projeto, integração segura e operação de arquiteturas multiagentes para consulta a bases documentais corporativas com controle de acesso estrito (RBAC).
 
 ---
 
 ## 📌 Visão Geral do Projeto
 
-O objetivo deste projeto é projetar, implementar e comparar experimentalmente três padrões arquiteturais de sistemas multiagentes:
+O objetivo deste projeto é implementar e comparar experimentalmente três padrões arquiteturais de sistemas multiagentes:
 1. **Coordenador (*Supervisor Pattern*)** — Implementado com **LangGraph**
 2. **Plano–Executor (*Plan-and-Execute*)** — Implementado com **LangGraph** (em andamento)
 3. **Conversação em Grupo (*Group Chat*)** — Implementado com **Microsoft AutoGen** (em andamento)
