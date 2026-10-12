@@ -1,6 +1,6 @@
 # Módulo de Agentes — Fase 3
 
-Esta pasta concentra os relatórios técnicos, especificações arquiteturais e documentação de implementação dos padrões multiagentes desenvolvidos para o estudo dirigido da UNICAMP: **Engenharia de Software para IA: Arquitetura, Integração Segura e Operação de Sistemas Multi-Agentes (MCP e LLMOps)**.
+Esta pasta concentra os relatórios técnicos, especificações arquiteturais e documentação de implementação dos padrões multiagentes desenvolvidos para o estudo dirigido: **Engenharia de Software para IA: Arquitetura, Integração Segura e Operação de Sistemas Multi-Agentes (MCP e LLMOps)**.
 
 ## Padrões Arquiteturais
 
