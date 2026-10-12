@@ -1,0 +1,29 @@
+flowchart TB
+    U["User"] --> P
+
+    subgraph LG["LangGraph"]
+        direction TB
+        P["Planner"]
+        T1["Task 1"]
+        T2["Task 2"]
+        T3["Task 3"]
+        E1["Executor"]
+        E2["Executor"]
+        E3["Executor"]
+
+        P -->|paralelo| T1
+        P -->|paralelo| T2
+        P -->|paralelo| T3
+        T1 --> E1
+        T2 --> E2
+        T3 --> E3
+    end
+
+    E1 --> M["MCP"]
+    E2 --> M
+    E3 --> M
+    M --> D["Documents"]
+
+    style LG fill:#ffffff,stroke:#888888,stroke-width:2px,stroke-dasharray:7 5
+    classDef component fill:#ffffff,stroke:#777777,stroke-width:2px,color:#222222
+    class U,P,T1,T2,T3,E1,E2,E3,M,D component

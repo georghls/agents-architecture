@@ -1,0 +1,21 @@
+flowchart TB
+    U["User"] --> C
+
+    subgraph LG["LangGraph"]
+        direction TB
+        C["Coordinator"]
+        R["Retrieval<br/>Agent"]
+        A["Analyst<br/>Agent"]
+        V["Validator<br/>Agent"]
+
+        C --> R
+        C --> A
+        C --> V
+    end
+
+    R --> M["MCP<br/>Server"]
+    M --> D["Documentos<br/>Corporativos"]
+
+    style LG fill:#ffffff,stroke:#888888,stroke-width:2px,stroke-dasharray:7 5
+    classDef component fill:#ffffff,stroke:#777777,stroke-width:2px,color:#222222
+    class U,C,R,A,V,M,D component

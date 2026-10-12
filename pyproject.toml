@@ -1,0 +1,38 @@
+[project]
+name = "agents-architecture"
+version = "0.1.0"
+description = "Estudo Dirigido UNICAMP: Arquitetura, Integração Segura e Operação de Sistemas Multi-Agentes (MCP e LLMOps)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=2.1.1",
+    "psycopg[binary]>=3.2.0",
+    "google-generativeai>=0.8.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "langchain-core>=0.3.0",
+    "langchain-google-genai>=2.0.0",
+    "langgraph>=0.2.0",
+    "uuid-utils>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "llm: testes que chamam o LLM real (exigem RUN_LLM_TESTS=1, rede e cota)",
+    "mcp_real: testes ponta a ponta do MCP com Supabase e Gemini (exigem RUN_MCP_TESTS=1)",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,21 @@
+flowchart TB
+    U["User"] --> G
+
+    subgraph AG["AutoGen"]
+        direction TB
+        G["Group Chat"]
+        R["Retrieval"]
+        A["Analyst"]
+        V["Validator"]
+
+        G --> R
+        G --> A
+        G --> V
+    end
+
+    R --> M["MCP"]
+    M --> D["Documents"]
+
+    style AG fill:#ffffff,stroke:#888888,stroke-width:2px,stroke-dasharray:7 5
+    classDef component fill:#ffffff,stroke:#777777,stroke-width:2px,color:#222222
+    class U,G,R,A,V,M,D component
