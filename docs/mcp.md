@@ -2,8 +2,6 @@
 
 Este documento descreve a arquitetura, o modelo de comunicação e o funcionamento operacional do **Model Context Protocol (MCP)** no sistema de perguntas e respostas sobre documentos corporativos.
 
-O MCP é um protocolo aberto que padroniza como modelos de linguagem e agentes de IA consomem contexto, recursos e ferramentas do mundo real de forma segura, auditável e desacoplada.
-
 ---
 
 ## 1. Visão Geral e Princípios Arquiteturais
@@ -280,3 +278,5 @@ $env:RUN_MCP_TESTS="1"; python -m pytest tests/test_mcp_toolkit.py -v
   - **D-007:** Simplificação e adoção do protocolo MCP via transporte `stdio`.
   - **D-008:** Integração dos agentes com o servidor MCP real via stdio e isolamento de segredos.
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2026-07-28)
+
+Documentação gerada pelo Gemini e revisada por George Sá
