@@ -96,7 +96,7 @@ sequenceDiagram
     Servidor-->>Cliente: Lista ferramentas disponíveis e esquemas JSON
 
     Note over Agente,Banco: Fase 3: Invocação e Busca Semântica
-    Agente->>Cliente: Invoca ferramenta_busca_corporativa(query, role)
+    Agente->>Cliente: Invoca ferramenta_busca_corporativa(query) com role fixado pelo código (D-010)
     Cliente->>Servidor: JSON-RPC tools/call (buscar_documentos_corporativos)
     Servidor->>Gemini: Gera embedding da pergunta (3072 dimensões)
     Gemini-->>Servidor: Vetor da pergunta

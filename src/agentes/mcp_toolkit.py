@@ -10,13 +10,14 @@ import os
 import sys
 from typing import Any
 
-from langchain_core.tools import tool
+from langchain_core.tools import BaseTool, tool
 from mcp import Client, StdioServerParameters
 from mcp.client.stdio import get_default_environment
 
 from src.config import RAIZ_PROJETO
 
-# Contrato do servidor (D-007). A ferramenta LangChain usa query/role e traduzimos aqui.
+# Contrato do servidor (D-007). O LLM só informa `query`; o `role` é fixado pelo
+# código na criação da ferramenta (D-010) e traduzido aqui para o contrato MCP.
 NOME_FERRAMENTA_MCP = "buscar_documentos_corporativos"
 TIMEOUT_SEGUNDOS = 60.0
 
@@ -73,17 +74,34 @@ def consultar_mcp(query: str, role: str, alvo: Any = None) -> str:
         return "Erro MCP: não foi possível consultar o servidor de documentos."
 
 
-@tool
-def ferramenta_busca_corporativa(query: str, role: str) -> str:
+def criar_ferramenta_busca(role: str) -> BaseTool:
     """
-    Busca documentos corporativos internos na base de dados da empresa.
-    Use esta ferramenta SEMPRE que precisar responder a perguntas sobre 
-    projetos da empresa, orçamentos, regras internas ou documentos em geral.
-    """
-    print(f"\n[Ferramenta MCP] Pesquisando por '{query}' com permissão de '{role}'...")
-    resultado = consultar_mcp(query, role)
-    print(f"[Ferramenta MCP] Resultado retornado: {resultado}\n")
-    return resultado
+    Cria a ferramenta de busca com o papel do usuário já fixado (D-010).
 
-# Lista de ferramentas que daremos aos agentes
-toolkit_corporativo = [ferramenta_busca_corporativa]
+    O ``role`` deve vir da sessão autenticada / estado do grafo, nunca do LLM.
+    Ele fica preso na closure e não aparece no schema da ferramenta, então o
+    modelo só consegue informar ``query``.
+    """
+    if not isinstance(role, str) or not role.strip():
+        raise ValueError("role da sessão é obrigatório para criar a ferramenta de busca.")
+    papel_da_sessao = role.strip()
+
+    @tool("ferramenta_busca_corporativa")
+    def ferramenta_busca_corporativa(query: str) -> str:
+        """
+        Busca documentos corporativos internos na base de dados da empresa.
+        Use esta ferramenta SEMPRE que precisar responder a perguntas sobre
+        projetos da empresa, orçamentos, regras internas ou documentos em geral.
+        """
+        print(f"\n[Ferramenta MCP] Pesquisando por '{query}' com permissão de '{papel_da_sessao}'...")
+        resultado = consultar_mcp(query, papel_da_sessao)
+        print(f"[Ferramenta MCP] Resultado retornado: {resultado}\n")
+        return resultado
+
+    return ferramenta_busca_corporativa
+
+
+def criar_toolkit_corporativo(role: str) -> list[BaseTool]:
+    """Lista de ferramentas entregue aos agentes, já presa ao papel da sessão."""
+    return [criar_ferramenta_busca(role)]
+

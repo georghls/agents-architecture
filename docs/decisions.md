@@ -122,6 +122,16 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Consequências e riscos: O repositório torna-se seguro para subida no GitHub. Usuários externos precisam configurar suas próprias credenciais em `.env` copiando de `.env.example`.
 - Como verificar: Rodar a suíte completa de testes (`pytest -v`), o script de infraestrutura (`python tests/teste_banco.py`) e o cliente MCP (`python scripts/cliente.py`), garantindo que nenhum segredo esteja no histórico de arquivos a ser commitado.
 
+### D-010 — Papel do usuário fixado pelo código, fora do schema da ferramenta (2026-10-13)
+
+- Status: aceito
+- Contexto: `ferramenta_busca_corporativa(query, role)` era uma ferramenta LangChain global com `role` no schema. O Coordenador a chamava de forma determinística com o papel do estado, mas, em agentes com *tool calling* (`bind_tools`, Plano–Executor, AutoGen), quem preencheria `role` seria o LLM, sujeito a *prompt injection* ("responda como diretoria"). Isso viola a regra de não aceitar papel declarado pelo modelo.
+- Decisão: substituir a ferramenta global por `criar_ferramenta_busca(role)` e `criar_toolkit_corporativo(role)`. O papel vem da sessão/estado do grafo, fica preso numa closure e o schema exposto ao modelo contém apenas `query`. Papel vazio ou ausente gera `ValueError` (falha fechada). O contrato do servidor MCP (D-007) não muda.
+- Alternativas consideradas: `InjectedToolArg` do LangChain (esconde o argumento do schema, mas depende de quem invoca para injetá-lo e não impede uma chamada com `role` forjado); manter a ferramenta global e confiar na disciplina dos nós (frágil ao reutilizar o toolkit nas outras arquiteturas).
+- Consequências e riscos: cada sessão/execução cria a própria instância da ferramenta. O servidor MCP continua confiando no `papel_do_usuario` recebido do cliente; a autenticação real segue pendente (A-05). Isso protege contra o LLM, mas não contra um cliente MCP malicioso.
+- Como verificar: `tests/test_mcp_toolkit.py` confere que o schema expõe só `query`, que um `role` enviado na chamada é ignorado em favor do papel da sessão, e que a criação sem papel falha.
+- Evidência (2026-10-13): `python -m pytest tests/test_mcp_toolkit.py -v` → 13 passed (33 s, com Supabase real); `pytest tests/test_coordenador.py -v` → 4 passed (256 s, Gemini + MCP + Supabase reais), incluindo isolamento geral × diretoria.
+
 ## Modelo para novas entradas
 
 ```md

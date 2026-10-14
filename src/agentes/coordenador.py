@@ -8,7 +8,7 @@ from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from src.agentes.mcp_toolkit import ferramenta_busca_corporativa
+from src.agentes.mcp_toolkit import criar_ferramenta_busca
 from src.config import chave_gemini
 
 
@@ -115,9 +115,10 @@ def pesquisador_node(state: EstadoCoordenador):
     role = state["role"]
     print(f"[Pesquisador] Buscando dados como '{role}'...")
     
-    # ATENÇÃO À REGRA DE OURO: A ferramenta é invocada usando a role que veio do Estado,
-    # não é o LLM que escolhe a permissão, somos nós!
-    resultado = ferramenta_busca_corporativa.invoke({"query": query, "role": role})
+    # REGRA DE OURO (D-010): a ferramenta é criada com a role do Estado e não
+    # expõe esse argumento; o LLM só consegue informar a query.
+    ferramenta = criar_ferramenta_busca(role)
+    resultado = ferramenta.invoke({"query": query})
     
     # Guardamos o resultado da pesquisa como uma mensagem do sistema para o redator ler
     mensagem_pesquisa = SystemMessage(content=f"DADOS RETORNADOS DO MCP: {resultado}")

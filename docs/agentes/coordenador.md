@@ -51,7 +51,7 @@ flowchart TB
     end
     
     subgraph MCP_LAYER ["Camada de Integração MCP (src/agentes/mcp_toolkit.py)"]
-        P -->|Invocação de Ferramenta| TOOL["ferramenta_busca_corporativa\n(query, role)"]
+        P -->|Invocação de Ferramenta| TOOL["criar_ferramenta_busca(role)\nferramenta_busca_corporativa(query)"]
         TOOL -->|Cliente stdio subprocess| CLIENT["mcp.Client\n(python -m src.mcp.server)"]
     end
     
@@ -94,7 +94,7 @@ class EstadoCoordenador(TypedDict):
 2. **Nó Pesquisador (`pesquisador_node`)**:
    - Atua como um *Worker* executor de busca.
    - Não toma decisões de negócio nem dialoga diretamente com o usuário final.
-   - Extrai a `query_atual` e a `role` diretamente do estado confiável e invoca a [`ferramenta_busca_corporativa`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/agentes/mcp_toolkit.py#L76-L87).
+   - Extrai a `query_atual` e a `role` diretamente do estado confiável, cria a ferramenta com [`criar_ferramenta_busca(role)`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/agentes/mcp_toolkit.py#L77-L101) e a invoca só com a `query`. O papel fica fixado pelo código e não aparece no schema visto pelo LLM (D-010).
    - O retorno obtido do MCP é encapsulado em uma `SystemMessage` padronizada (`"DADOS RETORNADOS DO MCP: ..."`), injetando evidências factuais no histórico para consumo do redator.
 3. **Nó Redator (`redator_node`)**:
    - É o responsável pela síntese final da resposta ao usuário.

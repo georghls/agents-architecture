@@ -88,3 +88,45 @@ def test_servidor_que_nao_sobe_vira_erro_mcp():
     texto = mcp_toolkit.consultar_mcp("qualquer", "geral", alvo=quebrado)
 
     assert texto.startswith("Erro MCP:")
+
+
+# ------------------------------------------------------------ papel fixado pelo código (D-010)
+
+def test_schema_da_ferramenta_nao_expoe_role_ao_llm():
+    """O LLM só enxerga `query`; o papel não faz parte do schema enviado ao modelo."""
+    ferramenta = mcp_toolkit.criar_ferramenta_busca("geral")
+    schema = ferramenta.tool_call_schema.model_json_schema()
+
+    assert set(schema["properties"]) == {"query"}
+    assert "role" not in ferramenta.args
+
+
+def test_role_vem_da_sessao_e_nao_pode_ser_sobrescrito(monkeypatch):
+    """Mesmo que o modelo tente mandar `role`, vale o papel fixado na criação."""
+    chamadas = []
+    monkeypatch.setattr(
+        mcp_toolkit, "consultar_mcp", lambda query, role: chamadas.append((query, role)) or "ok"
+    )
+    ferramenta = mcp_toolkit.criar_ferramenta_busca("geral")
+
+    ferramenta.invoke({"query": "orçamento secreto", "role": "diretoria"})
+
+    assert chamadas == [("orçamento secreto", "geral")]
+
+
+@pytest.mark.parametrize("role_invalido", ["", "   ", None])
+def test_criar_ferramenta_sem_role_falha(role_invalido):
+    """Sem papel de sessão não existe ferramenta: falha fechada."""
+    with pytest.raises(ValueError):
+        mcp_toolkit.criar_ferramenta_busca(role_invalido)
+
+
+def test_toolkit_corporativo_usa_o_papel_da_sessao(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(mcp_toolkit, "consultar_mcp", lambda query, role: chamadas.append(role) or "ok")
+
+    (ferramenta,) = mcp_toolkit.criar_toolkit_corporativo("diretoria")
+    ferramenta.invoke({"query": "x"})
+
+    assert ferramenta.name == "ferramenta_busca_corporativa"
+    assert chamadas == ["diretoria"]
