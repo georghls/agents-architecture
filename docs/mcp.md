@@ -162,9 +162,10 @@ Essa uniformidade impede **ataques de inferência por oráculo**: um usuário n�
 | Propriedade | Valor |
 |---|---|
 | **Nome** | `buscar_documentos_corporativos` |
-| **Descrição** | Busca documentos na base de conhecimento da empresa usando Inteligência Artificial. Sempre informe a 'pergunta' do usuário e o 'papel_do_usuario' (ex: geral, rh, diretoria). |
+| **Descrição** | Busca documentos na base de conhecimento da empresa usando Inteligência Artificial. A identidade e as permissões de acesso são validadas de forma confiável via token JWT da sessão MCP. |
 | **Transporte** | `stdio` (Standard Input / Standard Output) |
 | **Protocolo** | Model Context Protocol (MCP) |
+| **Autenticação** | Token JWT assinado (HS256) injetado na sessão (`MCP_AUTH_TOKEN`) |
 
 ### Esquema JSON de Entrada (`input_schema`)
 
@@ -175,13 +176,9 @@ Essa uniformidade impede **ataques de inferência por oráculo**: um usuário n�
     "pergunta": {
       "type": "string",
       "description": "Texto da consulta a ser buscada semanticamente"
-    },
-    "papel_do_usuario": {
-      "type": "string",
-      "description": "Papel de permissão do usuário solicitante (ex: 'geral', 'rh', 'diretoria')"
     }
   },
-  "required": ["pergunta", "papel_do_usuario"]
+  "required": ["pergunta"]
 }
 ```
 
@@ -195,12 +192,12 @@ Essa uniformidade impede **ataques de inferência por oráculo**: um usuário n�
   "params": {
     "name": "buscar_documentos_corporativos",
     "arguments": {
-      "pergunta": "Qual o orçamento do projeto secreto?",
-      "papel_do_usuario": "diretoria"
+      "pergunta": "Qual o orçamento do projeto secreto?"
     }
   }
 }
 ```
+
 
 ### Exemplo de Resposta de Sucesso (`result`)
 
@@ -227,15 +224,16 @@ Essa uniformidade impede **ataques de inferência por oráculo**: um usuário n�
 | Requisito de Segurança | Implementação no Projeto |
 |---|---|
 | **Isolamento de Banco** | Os agentes não possuem credenciais de banco. Apenas o servidor MCP conecta ao Supabase via `psycopg`. |
-| **RBAC Não Circundável** | A restrição de perfil é avaliada na cláusula `WHERE` da query SQL, sem depender de filtragem no prompt do LLM. |
-| **Higienização de Ambiente** | A função `parametros_servidor()` repassa somente `DATABASE_URL` e `GEMINI_API_KEY` ao subprocesso via `env`. |
+| **Identidade Confiável (A-05)** | Resolvido em D-011: a sessão MCP é autenticada via token JWT (HS256) gerado pelo cliente seguro. O servidor valida a assinatura e extrai o papel diretamente do token. |
+| **RBAC Não Circundável** | A restrição de perfil é avaliada na cláusula `WHERE` da query SQL utilizando o papel autenticado pelo JWT, sem depender de alegação do modelo nem de argumentos da ferramenta. |
+| **Higienização de Ambiente** | A função `parametros_servidor()` repassa somente `DATABASE_URL`, `GEMINI_API_KEY`, `AUTH_SECRET_KEY` e `MCP_AUTH_TOKEN` ao subprocesso via `env`. |
 | **Nota de Corte Semântica** | `LIMIAR_DISTANCIA = 0.60` impede que o modelo receba trechos arbitrários como resposta quando não há dados pertinentes. |
-| **Mitigação de Prompt Injection** | O conteúdo recuperado é tratado estritamente como evidência de texto para síntese, não como instrução de controle. |
+| **Mitigação de Prompt Injection** | O LLM não enxerga nem manipula o papel (D-010), e o conteúdo recuperado é tratado estritamente como evidência de texto para síntese, não como instrução de controle. |
 
-### Limitações Conhecidas e Próximos Passos (Decisão D-008 e Pendência A-05)
+### Limitações Conhecidas e Próximos Passos
 
-- **Propagação de Identidade no Protótipo:** No estágio atual de protótipo de estudo, o `papel_do_usuario` é fornecido como argumento da ferramenta a partir do estado confiável do grafo/orquestrador (e nunca inventado pelo LLM). Em produção corporativa final, a identidade técnica deve ser propagada via token de autorização criptográfico (OAuth 2.0 / JWT mTLS) na camada de transporte.
 - **Ciclo de Subprocesso por Consulta:** Atualmente o cliente executa o servidor em subprocesso a cada invocação no adapter síncrono. Em ambientes de alta escala, recomenda-se manter uma sessão assíncrona persistente (daemon ou pool).
+- **Integração com IdP Externo:** O sistema utiliza tokens simétricos HS256 gerados localmente. Em produção com múltiplos microserviços, o validador pode migrar para chaves assimétricas (RS256/ES256) ou JWKS de um IdP corporativo (Supabase Auth / Keycloak).
 
 ---
 
@@ -244,27 +242,24 @@ Essa uniformidade impede **ataques de inferência por oráculo**: um usuário n�
 O servidor MCP pode ser verificado e testado **isoladamente**, sem necessidade de instanciar nenhum agente ou modelo de linguagem:
 
 ### 1. Descoberta e Consulta via Cliente de Teste
-Executa o script de cliente dedicado que conecta via `stdio`, descobre a ferramenta e efetua requisições com dois perfis diferentes:
+Executa o script de cliente dedicado que conecta via `stdio`, descobre a ferramenta e efetua requisições com sessões autenticadas (Diretoria, Geral e tentativa não autenticada):
 
 ```bash
 python scripts/cliente.py
 ```
 
 ### 2. Testes Automatizados de Contrato e Isolamento
-A suíte de testes em [tests/test_mcp_toolkit.py](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/tests/test_mcp_toolkit.py) valida:
-- Exposição do schema correto da ferramenta.
-- Capacidade de descoberta sem variáveis de banco.
+A suíte de testes em [tests/test_mcp_toolkit.py](file:///c:/Users/georg/Estudos/unicamp\agents-architecture/tests/test_mcp_toolkit.py) valida:
+- Exposição do schema correto da ferramenta (apenas `pergunta`).
+- Descoberta stdio sem segredos de banco.
 - Isolamento de variáveis de ambiente no subprocesso.
-- Tratamento resiliente de falhas de inicialização do servidor.
+- Geração e validação de JWTs (HS256).
+- Rejeição de tokens expirados, adulterados ou com chaves forjadas.
+- Rejeição de chamadas sem token (falha fechada).
+- Isolamento de dados entre perfis distintos (Geral vs Diretoria).
 
 ```bash
 python -m pytest tests/test_mcp_toolkit.py -v
-```
-
-Para rodar também os testes integrados de isolamento contra a base real:
-```bash
-# Windows PowerShell
-$env:RUN_MCP_TESTS="1"; python -m pytest tests/test_mcp_toolkit.py -v
 ```
 
 ---
@@ -277,6 +272,8 @@ $env:RUN_MCP_TESTS="1"; python -m pytest tests/test_mcp_toolkit.py -v
   - **D-006:** Adoção do Google Gemini para embeddings (`gemini-embedding-2`).
   - **D-007:** Simplificação e adoção do protocolo MCP via transporte `stdio`.
   - **D-008:** Integração dos agentes com o servidor MCP real via stdio e isolamento de segredos.
+  - **D-010:** Papel do usuário fixado pelo código, fora do schema da ferramenta.
+  - **D-011:** Autenticação de sessão MCP via JWT assinado e fechamento da questão A-05.
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2026-07-28)
+- [RFC 7519 — JSON Web Token (JWT)](https://datatracker.ietf.org/doc/html/rfc7519)
 
-Documentação gerada pelo Gemini e revisada por George Sá

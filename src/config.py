@@ -34,3 +34,14 @@ def url_banco() -> str:
 
 def chave_gemini() -> str:
     return obter_obrigatoria("GEMINI_API_KEY")
+
+
+def chave_secreta_auth() -> str:
+    """Chave simétrica para assinatura e verificação de JWTs (HS256).
+
+    Se não configurada em AUTH_SECRET_KEY, utiliza uma chave padrão para
+    desenvolvimento e testes locais (mínimo 32 caracteres / 256 bits conforme RFC 7518).
+    """
+    padrao = "chave-secreta-padrao-desenvolvimento-local-mcp-min-32-chars"
+    return os.environ.get("AUTH_SECRET_KEY", padrao).strip() or padrao
+

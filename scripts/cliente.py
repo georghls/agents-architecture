@@ -17,51 +17,51 @@ from src.agentes.mcp_toolkit import parametros_servidor
 
 # Pode rodar diretamente com: python scripts/cliente.py ou python -m scripts.cliente
 
-async def rodar_cliente():
-    print("🔌 Iniciando Cliente MCP e conectando ao Servidor...")
+async def consultar_com_papel(role: str | None, pergunta: str):
+    rotulo = role.upper() if role else "NÃO AUTENTICADO"
+    print(f"\n🔐 Iniciando sessão como: [{rotulo}]")
     
-    # 1. Configura os parâmetros para o cliente "ligar" o nosso servidor Python
-    # (python -m src.mcp.server, na raiz do projeto, com DATABASE_URL/GEMINI_API_KEY)
-    server_params = parametros_servidor()
+    server_params = parametros_servidor(role=role) if role else parametros_servidor(token="invalido")
     
-    # 2. Estabelece a conexão (via entrada e saída padrão - STDIO)
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
-            # Inicializa o aperto de mãos (handshake)
             await session.initialize()
-            print("✅ Conexão estabelecida com sucesso!\n")
             
-            # 3. O Cliente "pergunta" ao servidor quais ferramentas ele possui
+            # A ferramenta é chamada apenas com a pergunta.
+            # O papel de acesso é garantido pelo token JWT na sessão do processo.
+            resultado = await session.call_tool(
+                "buscar_documentos_corporativos",
+                arguments={"pergunta": pergunta},
+            )
+            print(f"Resultado do Servidor MCP: {resultado.content[0].text}")
+
+
+async def rodar_cliente():
+    print("🔌 Demonstração de Cliente MCP com Autenticação Confiável (A-05 - JWT)")
+    print("=" * 65)
+
+    # 1. Descoberta de ferramentas usando sessão do servidor
+    params_descoberta = parametros_servidor(role="geral")
+    async with stdio_client(params_descoberta) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
             ferramentas = await session.list_tools()
             print("Ferramentas descobertas no servidor:")
             for tool in ferramentas.tools:
-                print(f" 🛠️  - {tool.name}")
-            
-            print("-" * 50)
-            
-            # 4. O Cliente decide usar a ferramenta como um DIRETOR
-            print("🕵️ Fazendo requisição como: DIRETORIA")
-            resultado_diretor = await session.call_tool(
-                "buscar_documentos_corporativos", 
-                arguments={
-                    "pergunta": "Qual o orçamento do projeto secreto?", 
-                    "papel_do_usuario": "diretoria"
-                }
-            )
-            print(f"Resposta do Servidor MCP: {resultado_diretor.content[0].text}")
-            print("-" * 50)
-            
-            # 5. O Cliente decide usar a ferramenta como um FUNCIONÁRIO GERAL
-            print("🧑‍💼 Fazendo requisição como: GERAL")
-            resultado_geral = await session.call_tool(
-                "buscar_documentos_corporativos", 
-                arguments={
-                    "pergunta": "Qual o orçamento do projeto secreto?", 
-                    "papel_do_usuario": "geral"
-                }
-            )
-            print(f"Resposta do Servidor MCP: {resultado_geral.content[0].text}")
-            print("-" * 50)
+                print(f" 🛠️  - {tool.name}: {tool.description.strip()}")
+                print(f"      Schema: {list(tool.input_schema.get('properties', {}).keys())}")
+            print("-" * 65)
+
+    # 2. Requisição como DIRETORIA (token assinado para diretoria)
+    await consultar_com_papel("diretoria", "Qual o orçamento do projeto secreto?")
+
+    # 3. Requisição como GERAL (token assinado para geral)
+    await consultar_com_papel("geral", "Qual o orçamento do projeto secreto?")
+
+    # 4. Requisição com token INVÁLIDO (falha fechada)
+    await consultar_com_papel(None, "Qual o orçamento do projeto secreto?")
+    print("=" * 65)
+
 
 if __name__ == "__main__":
     # O MCP usa comunicação assíncrona moderna (async/await)

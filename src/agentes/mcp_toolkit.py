@@ -14,23 +14,32 @@ from langchain_core.tools import BaseTool, tool
 from mcp import Client, StdioServerParameters
 from mcp.client.stdio import get_default_environment
 
+from src.autorizacao.tokens import gerar_token_sessao
 from src.config import RAIZ_PROJETO
 
-# Contrato do servidor (D-007). O LLM só informa `query`; o `role` é fixado pelo
-# código na criação da ferramenta (D-010) e traduzido aqui para o contrato MCP.
+# Contrato do servidor (D-007 / D-011). O LLM só informa `query`; o papel de acesso
+# é autenticado via JWT de sessão (A-05) e a ferramenta MCP recebe apenas `pergunta`.
 NOME_FERRAMENTA_MCP = "buscar_documentos_corporativos"
 TIMEOUT_SEGUNDOS = 60.0
 
 # Só estes segredos são repassados ao subprocesso, além do ambiente básico do SDK.
-_VARIAVEIS_REPASSADAS = ("DATABASE_URL", "GEMINI_API_KEY")
+_VARIAVEIS_REPASSADAS = ("DATABASE_URL", "GEMINI_API_KEY", "AUTH_SECRET_KEY")
 
 
-def parametros_servidor() -> StdioServerParameters:
-    """Como iniciar o servidor MCP como subprocesso stdio."""
+def parametros_servidor(role: str | None = None, token: str | None = None) -> StdioServerParameters:
+    """Como iniciar o servidor MCP como subprocesso stdio com credencial JWT (A-05)."""
     env = get_default_environment()
     for nome in _VARIAVEIS_REPASSADAS:
         if os.environ.get(nome):
             env[nome] = os.environ[nome]
+
+    if token:
+        env["MCP_AUTH_TOKEN"] = token
+    elif role:
+        env["MCP_AUTH_TOKEN"] = gerar_token_sessao(papel=role)
+    elif os.environ.get("MCP_AUTH_TOKEN"):
+        env["MCP_AUTH_TOKEN"] = os.environ["MCP_AUTH_TOKEN"]
+
     return StdioServerParameters(
         command=sys.executable,
         args=["-m", "src.mcp.server"],
@@ -44,11 +53,11 @@ def _texto_do_resultado(resultado) -> str:
     return "\n".join(partes).strip()
 
 
-async def _chamar_mcp(alvo: Any, query: str, role: str) -> str:
+async def _chamar_mcp(alvo: Any, query: str) -> str:
     async with Client(alvo, read_timeout_seconds=TIMEOUT_SEGUNDOS) as cliente:
         resultado = await cliente.call_tool(
             NOME_FERRAMENTA_MCP,
-            {"pergunta": query, "papel_do_usuario": role},
+            {"pergunta": query},
         )
     texto = _texto_do_resultado(resultado)
     if resultado.is_error:
@@ -63,15 +72,16 @@ def consultar_mcp(query: str, role: str, alvo: Any = None) -> str:
 
     ``alvo`` permite injetar outro destino aceito por ``mcp.Client`` (ex.: a
     instância ``MCPServer`` em processo, nos testes). Por padrão, sobe o
-    servidor real via stdio. Falhas viram texto ``Erro MCP: ...`` para o
-    agente; o detalhe técnico vai para o stderr.
+    servidor real via stdio com token JWT autenticado para o ``role`` da sessão.
+    Falhas viram texto ``Erro MCP: ...`` para o agente; o detalhe técnico vai para o stderr.
     """
-    alvo = alvo if alvo is not None else parametros_servidor()
+    alvo = alvo if alvo is not None else parametros_servidor(role=role)
     try:
-        return asyncio.run(_chamar_mcp(alvo, query, role))
+        return asyncio.run(_chamar_mcp(alvo, query))
     except Exception as erro:  # noqa: BLE001 - transporte/SDK podem lançar classes variadas
         print(f"[Cliente MCP] Falha ao consultar o servidor: {erro!r}", file=sys.stderr)
         return "Erro MCP: não foi possível consultar o servidor de documentos."
+
 
 
 def criar_ferramenta_busca(role: str) -> BaseTool:

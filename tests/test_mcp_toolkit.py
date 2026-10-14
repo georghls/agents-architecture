@@ -22,16 +22,20 @@ def listar_ferramentas(alvo):
     return asyncio.run(_listar())
 
 
-# ------------------------------------------------------------ contrato e capacidades
+# ------------------------------------------------------------ contrato e capacidades (D-011)
 
-def test_servidor_expoe_ferramenta_com_contrato_d007():
-    """Garante que o servidor expõe a ferramenta buscar_documentos_corporativos no formato correto."""
+def test_servidor_expoe_ferramenta_com_contrato_d011():
+    """Garante que a ferramenta buscar_documentos_corporativos recebe apenas 'pergunta'.
+    
+    O papel do usuário não é exposto como argumento na ferramenta MCP; ele é
+    autenticado via token JWT na sessão (A-05).
+    """
     ferramentas = {f.name: f for f in listar_ferramentas(servidor.mcp)}
 
     assert mcp_toolkit.NOME_FERRAMENTA_MCP in ferramentas
     schema = ferramentas[mcp_toolkit.NOME_FERRAMENTA_MCP].input_schema
-    assert set(schema["properties"]) == {"pergunta", "papel_do_usuario"}
-    assert set(schema.get("required", [])) == {"pergunta", "papel_do_usuario"}
+    assert set(schema["properties"]) == {"pergunta"}
+    assert set(schema.get("required", [])) == {"pergunta"}
 
 
 def test_stdio_real_lista_ferramentas_sem_segredos():
@@ -44,13 +48,16 @@ def test_stdio_real_lista_ferramentas_sem_segredos():
 
 
 def test_parametros_servidor_repassam_apenas_segredos_necessarios(monkeypatch):
-    """Garante que apenas DATABASE_URL e GEMINI_API_KEY são repassados ao processo filho."""
+    """Garante que apenas DATABASE_URL, GEMINI_API_KEY e AUTH_SECRET_KEY são repassados ao processo filho."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://teste")
+    monkeypatch.setenv("AUTH_SECRET_KEY", "chave-teste-32-caracteres-minimo")
     monkeypatch.setenv("OUTRO_SEGREDO", "nao-repassar")
 
     env = mcp_toolkit.parametros_servidor().env
     assert env["DATABASE_URL"] == "postgresql://teste"
+    assert env["AUTH_SECRET_KEY"] == "chave-teste-32-caracteres-minimo"
     assert "OUTRO_SEGREDO" not in env
+
 
 
 # ------------------------------------------------------------ isolamento e consultas reais
@@ -130,3 +137,76 @@ def test_toolkit_corporativo_usa_o_papel_da_sessao(monkeypatch):
 
     assert ferramenta.name == "ferramenta_busca_corporativa"
     assert chamadas == ["diretoria"]
+
+
+# ------------------------------------------------------------ autenticação confiável (A-05 - JWT)
+
+from src.autorizacao.tokens import (
+    TokenAusenteErro,
+    TokenExpiradoErro,
+    TokenInvalidoErro,
+    gerar_token_sessao,
+    validar_token_sessao,
+)
+
+
+def test_geracao_e_validacao_token_jwt():
+    """Gera token assinado e valida se claims e papel são preservados com precisão."""
+    token = gerar_token_sessao("diretoria", usuario_id="user_teste", expiracao_segundos=120)
+    payload = validar_token_sessao(token)
+
+    assert payload["sub"] == "user_teste"
+    assert payload["papel"] == "diretoria"
+    assert "exp" in payload
+
+
+def test_token_expirado_falha():
+    """Token com expiração retroativa é rejeitado imediatamente."""
+    token_expirado = gerar_token_sessao("geral", expiracao_segundos=-10)
+
+    with pytest.raises(TokenExpiradoErro):
+        validar_token_sessao(token_expirado)
+
+
+def test_token_adulterado_falha():
+    """Se o payload for adulterado (ex: trocar geral por diretoria), a assinatura invalida."""
+    token = gerar_token_sessao("geral")
+    partes = token.split(".")
+    # Substitui a última letra da assinatura para simular adulteração
+    token_corrompido = f"{partes[0]}.{partes[1]}.{'A' if partes[2][-1] != 'A' else 'B'}"
+
+    with pytest.raises(TokenInvalidoErro):
+        validar_token_sessao(token_corrompido)
+
+
+def test_token_com_chave_errada_falha():
+    """Token assinado com chave de outro emissor é rejeitado."""
+    token = gerar_token_sessao("diretoria", segredo="outra-chave-secreta-diferente-32chars")
+
+    with pytest.raises(TokenInvalidoErro):
+        validar_token_sessao(token)
+
+
+def test_token_sem_papel_falha():
+    """Tentativa de emitir token sem papel de acesso falha fechado."""
+    with pytest.raises(ValueError):
+        gerar_token_sessao("")
+
+
+def test_servidor_sem_token_retorna_erro_auth():
+    """Sem token de autenticação, o servidor MCP recusa o acesso por padrão."""
+    params = mcp_toolkit.parametros_servidor(token="")
+    params.env = {k: v for k, v in (params.env or {}).items() if k != "MCP_AUTH_TOKEN"}
+
+    texto = mcp_toolkit.consultar_mcp("qualquer", "geral", alvo=params)
+    assert "erro" in texto.lower() or "acesso negado" in texto.lower()
+
+
+def test_servidor_com_token_forjado_retorna_erro_auth():
+    """Tentativa de enviar token forjado com chave arbitrária é barrada no servidor."""
+    token_forjado = gerar_token_sessao("diretoria", segredo="chave-invasor-nao-autorizada-32ch")
+    params = mcp_toolkit.parametros_servidor(token=token_forjado)
+
+    texto = mcp_toolkit.consultar_mcp("qualquer", "geral", alvo=params)
+    assert "erro" in texto.lower() or "acesso negado" in texto.lower()
+

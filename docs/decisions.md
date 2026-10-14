@@ -30,7 +30,7 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 | A-02 | Versão do SDK e transporte MCP | Compatibilidade com cliente e identidade |
 | A-03 | Tipo de banco, índice vetorial e armazenamento de originais | Simplicidade local, persistência, acesso e reversibilidade |
 | A-04 | Modelo de embeddings e geração | Qualidade, custo, privacidade, disponibilidade |
-| A-05 | Política de acesso e identidade para protótipo | Não confiar em alegações do modelo; testar perfis |
+| A-05 | Política de acesso e identidade para protótipo | Resolvido em D-011 via JWT assinado (HS256) na sessão MCP |
 | A-06 | Formato do corpus, chunking e versões | Rastreabilidade e atualização de documentos |
 | A-07 | Interface, dashboard e implantação | Compatibilidade com prazo acadêmico |
 
@@ -132,6 +132,22 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Como verificar: `tests/test_mcp_toolkit.py` confere que o schema expõe só `query`, que um `role` enviado na chamada é ignorado em favor do papel da sessão, e que a criação sem papel falha.
 - Evidência (2026-10-13): `python -m pytest tests/test_mcp_toolkit.py -v` → 13 passed (33 s, com Supabase real); `pytest tests/test_coordenador.py -v` → 4 passed (256 s, Gemini + MCP + Supabase reais), incluindo isolamento geral × diretoria.
 
+### D-011 — Autenticação de Sessão MCP via JWT assinado e fechamento de A-05 (2026-10-14)
+
+- Status: aceito
+- Contexto: A decisão D-010 blindou o LLM contra prompt injection no papel do usuário ao criar a ferramenta com o `role` fixado na closure. No entanto, o protocolo MCP entre o cliente e o servidor ainda expunha `papel_do_usuario` no schema de `buscar_documentos_corporativos` e confiava cegamente no argumento recebido. Qualquer cliente MCP (ou processo malicioso) poderia forjar privilégios enviando `papel_do_usuario="diretoria"`, violando o aceite de segurança 2.5 e mantendo a questão A-05 aberta.
+- Decisão:
+  1. Adotar o padrão **JWT (JSON Web Token — RFC 7519)** assinado com HMAC-SHA256 (`HS256`) através da biblioteca `PyJWT` para autenticação de sessão do cliente MCP.
+  2. Implementar `src/autorizacao/tokens.py` com `gerar_token_sessao` e `validar_token_sessao`, protegendo integridade, sujeito (`sub`), papel (`papel`) e expiração (`exp`), assinado com chave do sistema (`AUTH_SECRET_KEY`).
+  3. No transporte `stdio`, o cliente seguro gera o JWT a partir da sessão autenticada e o injeta no ambiente do subprocesso (`MCP_AUTH_TOKEN`).
+  4. O servidor MCP valida o token na camada de autorização e extrai o papel diretamente das claims criptográficas verificadas. Se o token for ausente, adulterado ou expirado, nega o acesso imediatamente (falha fechada).
+  5. O contrato público da ferramenta MCP `buscar_documentos_corporativos` passa a exigir apenas `pergunta: str`, eliminando completamente o argumento `papel_do_usuario` da API de ferramentas do servidor.
+- Alternativas consideradas:
+  - Implementar verificação HMAC caseira com bibliotecas nativas: descartado em favor do padrão oficial `PyJWT`, já instalado e testado no ambiente sem problemas de compilação C/C++, prevenindo armadilhas conhecidas de segurança (como `alg: none` e ataques de temporização).
+  - OAuth 2.0 com Identity Provider remoto completo: descartado por introduzir complexidade excessiva de infraestrutura e latência de rede para um protótipo em transporte `stdio`.
+- Consequências e riscos: A autenticação torna-se técnica e criptograficamente verificável no servidor MCP. A chave `AUTH_SECRET_KEY` precisa ser preservada com segurança (mínimo de 32 caracteres). O servidor MCP não aceita mais chamadas sem token válido.
+- Como verificar: `python -m pytest tests/test_mcp_toolkit.py -v` (20 testes passam, cobrindo emissão, validação, token expirado, token adulterado, rejeição de chamadas sem token e rejeição de token com chave forjada); `python scripts/cliente.py` demonstra consultas autenticadas de diretoria, geral e negação de acesso sem token.
+
 ## Modelo para novas entradas
 
 ```md
@@ -144,5 +160,6 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Consequências e riscos:
 - Como verificar:
 ```
+
 
 
