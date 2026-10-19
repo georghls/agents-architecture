@@ -148,6 +148,21 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Consequências e riscos: A autenticação torna-se técnica e criptograficamente verificável no servidor MCP. A chave `AUTH_SECRET_KEY` precisa ser preservada com segurança (mínimo de 32 caracteres). O servidor MCP não aceita mais chamadas sem token válido.
 - Como verificar: `python -m pytest tests/test_mcp_toolkit.py -v` (20 testes passam, cobrindo emissão, validação, token expirado, token adulterado, rejeição de chamadas sem token e rejeição de token com chave forjada); `python scripts/cliente.py` demonstra consultas autenticadas de diretoria, geral e negação de acesso sem token.
 
+### D-012 — Padrão Plano–Executor com tarefas dinâmicas (1 a 3) e orquestração Fan-Out/Fan-In via Send API no LangGraph (2026-10-14)
+
+- Status: aceito
+- Contexto: O planejamento acadêmico e o diagrama da Fase 1 (`plano-executor.mmd`) previram tarefas executadas em paralelo consultando o mesmo servidor MCP (D-001). Fixar rigidamente em exatamente 3 tarefas forçava o LLM a inventar subtarefas redundantes ou artificiais para perguntas diretas (ex: cardápio de almoço), desperdiçando tokens e requisições ao MCP. Por outro lado, um número irrestrito de tarefas poderia levar a planos longos demais e esgotamento de cotas de LLM (erros 429).
+- Decisão:
+  1. Permitir que o nó Planejador gere dinamicamente entre 1 e 3 subtarefas focadas na base corporativa (`min_items=1, max_items=3`), estruturado via Pydantic (`PlanoDeAcao`).
+  2. Implementar a execução paralela das tarefas utilizando a API nativa `Send` do LangGraph (padrão Map-Reduce / Fan-Out), convergindo para um nó único de síntese e redação final (Fan-In).
+  3. Cada executor consome a ferramenta de busca corporativa com a credencial JWT atrelada ao `role` imutável da sessão do usuário recebida do estado, sem expor `role` no schema do LLM (D-010, D-011).
+  4. O nó sintetizador compila as evidências coletadas por todos os executores e gera a resposta formal, aplicando o mesmo princípio de falha fechada do Coordenador quando nenhum dado for encontrado no perfil de acesso.
+- Alternativas consideradas:
+  - Fixo em exatamente 3 tarefas com nós estáticos: descartado por ineficiência e geração de buscas artificiais para perguntas simples.
+  - Execução sequencial com replanejamento cíclico sem paralelismo: descartado por contrariar o esclarecimento do autor em D-001 e retardar o tempo total de resposta.
+- Consequências e riscos: O tempo de execução das buscas ocorre de forma concorrente, aproveitando o paralelismo do LangGraph. Perguntas simples tornam-se mais rápidas e econômicas sem violar a capacidade de paralelizar até 3 frentes para perguntas complexas. O servidor MCP e a API de embeddings do Gemini recebem até 3 chamadas simultâneas.
+- Como verificar: Testes automatizados em `tests/test_plano_executor.py` conferem que o schema do plano não aceita injeção de papel, que o plano respeita o limite de 1 a 3 tarefas, que perguntas gerais não vazam dados restritos e que diretoria obtém os dados autorizados após consolidação das tarefas.
+
 ## Modelo para novas entradas
 
 ```md
@@ -160,6 +175,7 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Consequências e riscos:
 - Como verificar:
 ```
+
 
 
 

@@ -66,6 +66,19 @@ async def _chamar_mcp(alvo: Any, query: str) -> str:
     return texto or "Erro MCP: resposta vazia do servidor."
 
 
+async def consultar_mcp_async(query: str, role: str, alvo: Any = None) -> str:
+    """
+    Consulta o servidor MCP assincronamente e devolve o texto da ferramenta.
+    Permite concorrência nativa para tarefas paralelas (D-001, D-012).
+    """
+    alvo = alvo if alvo is not None else parametros_servidor(role=role)
+    try:
+        return await _chamar_mcp(alvo, query)
+    except Exception as erro:  # noqa: BLE001 - transporte/SDK podem lançar classes variadas
+        print(f"[Cliente MCP] Falha ao consultar o servidor (async): {erro!r}", file=sys.stderr)
+        return "Erro MCP: não foi possível consultar o servidor de documentos."
+
+
 def consultar_mcp(query: str, role: str, alvo: Any = None) -> str:
     """
     Consulta o servidor MCP e devolve o texto da ferramenta.
@@ -75,12 +88,8 @@ def consultar_mcp(query: str, role: str, alvo: Any = None) -> str:
     servidor real via stdio com token JWT autenticado para o ``role`` da sessão.
     Falhas viram texto ``Erro MCP: ...`` para o agente; o detalhe técnico vai para o stderr.
     """
-    alvo = alvo if alvo is not None else parametros_servidor(role=role)
-    try:
-        return asyncio.run(_chamar_mcp(alvo, query))
-    except Exception as erro:  # noqa: BLE001 - transporte/SDK podem lançar classes variadas
-        print(f"[Cliente MCP] Falha ao consultar o servidor: {erro!r}", file=sys.stderr)
-        return "Erro MCP: não foi possível consultar o servidor de documentos."
+    return asyncio.run(consultar_mcp_async(query, role, alvo=alvo))
+
 
 
 

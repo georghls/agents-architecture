@@ -7,7 +7,7 @@ Esta pasta concentra os relatórios técnicos, especificações arquiteturais e 
 | Arquitetura | Framework | Documento | Status |
 |---|---|---|---|
 | **1. Coordenador (Supervisor Pattern)** | LangGraph | [`coordenador.md`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/agentes/coordenador.md) | Concluído e testado |
-| **2. Plano–Executor** | LangGraph | `plano_executor.md` | Planejado |
+| **2. Plano–Executor** | LangGraph | [`plano_executor.md`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/agentes/plano_executor.md) | Concluído e testado |
 | **3. Conversação em Grupo** | AutoGen | `conversa_grupo.md` | Planejado |
 
 ## Regra Fundamental Compartilhada

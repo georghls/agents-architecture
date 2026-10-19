@@ -7,9 +7,9 @@ Repositório do estudo dirigido focado no projeto, integração segura e operaç
 ## 📌 Visão Geral do Projeto
 
 O objetivo deste projeto é implementar e comparar experimentalmente três padrões arquiteturais de sistemas multiagentes:
-1. **Coordenador (*Supervisor Pattern*)** — Implementado com **LangGraph**
-2. **Plano–Executor (*Plan-and-Execute*)** — Implementado com **LangGraph** (em andamento)
-3. **Conversação em Grupo (*Group Chat*)** — Implementado com **Microsoft AutoGen** (em andamento)
+1. **Coordenador (*Supervisor Pattern*)** — Implementado com **LangGraph** (concluído)
+2. **Plano–Executor (*Plan-and-Execute*)** — Implementado com **LangGraph** (concluído)
+3. **Conversação em Grupo (*Group Chat*)** — Implementado com **Microsoft AutoGen** (planejado)
 
 ### Regra Fundamental de Arquitetura
 Os agentes e modelos de linguagem (LLM) **nunca acessam o banco de dados diretamente** nem possuem privilégios declarados por prompt. Toda recuperação documental é obrigatoriamente intermediada por um servidor **Model Context Protocol (MCP)** via transporte `stdio`, garantindo que o controle de acesso baseado em papel (RBAC) seja aplicado no nível de dados e na camada de protocolo.
@@ -60,13 +60,15 @@ O projeto adota uma arquitetura híbrida projetada para contornar restrições d
 │   ├── multi-agent.md         # Detalhamento comparativo dos três padrões
 │   ├── agentes/               # Relatórios técnicos dos padrões implementados
 │   │   ├── README.md
-│   │   └── coordenador.md     # Relatório técnico completo do Agente Coordenador
+│   │   ├── coordenador.md     # Relatório técnico completo do Agente Coordenador
+│   │   └── plano_executor.md  # Relatório técnico completo do Agente Plano-Executor
 │   └── diagramas/             # Diagramas em formato Mermaid (.mmd)
 │
 ├── src/                       # Código-fonte da aplicação
 │   ├── config.py              # Leitura sob demanda de configurações e segredos (.env)
 │   ├── agentes/               # Módulos de orquestração multiagentes
 │   │   ├── coordenador.py     # Grafo do Coordenador (Supervisor, Pesquisador, Redator)
+│   │   ├── plano_executor.py  # Grafo do Plano-Executor (Planner, Executores Paralelos, Sintetizador)
 │   │   └── mcp_toolkit.py     # Cliente MCP que inicia o servidor stdio
 │   ├── autorizacao/           # Fronteira de autorização e controle de identidade
 │   ├── busca/                 # Embeddings Gemini e consultas vetoriais
@@ -80,9 +82,11 @@ O projeto adota uma arquitetura híbrida projetada para contornar restrições d
 │
 └── tests/                     # Suíte de testes automatizados e integrados
     ├── test_coordenador.py    # Testes automatizados do Coordenador com pytest
+    ├── test_plano_executor.py # Testes automatizados do Plano-Executor com pytest
     ├── test_mcp_toolkit.py    # Testes do cliente/servidor MCP e sanitização
     ├── teste_banco.py         # Script utilitário para validar banco e embeddings
-    └── teste_coordenador.py   # Script de demonstração passo a passo do Coordenador
+    ├── teste_coordenador.py   # Script de demonstração passo a passo do Coordenador
+    └── teste_plano_executor.py # Script de demonstração passo a passo do Plano-Executor
 ```
 
 ---
@@ -123,6 +127,7 @@ Edite o arquivo `.env` com suas credenciais:
 ```dotenv
 DATABASE_URL=postgresql://postgres.xxx:senha@aws-0-us-west-2.pooler.supabase.com:6543/postgres
 GEMINI_API_KEY=sua_chave_do_google_gemini
+AUTH_SECRET_KEY=sua_chave_secreta_jwt_minimo_32_caracteres
 ```
 
 *(O arquivo `.env` é estritamente ignorado pelo Git e nunca deve ser commitado).*
@@ -149,15 +154,22 @@ Executa o fluxo completo do Supervisor Pattern com rastreamento de métricas e t
 python -m src.agentes.coordenador
 ```
 
-### D. Executar a Suíte de Testes Automatizados com `pytest`
+### D. Executar o Agente Plano-Executor (LangGraph + Fan-Out Paralelo + MCP)
+Executa o fluxo completo do Plan-and-Execute com decomposição em tarefas paralelas (1 a 3 tarefas):
+```bash
+python -m src.agentes.plano_executor
+```
+
+### E. Executar a Suíte de Testes Automatizados com `pytest`
 ```bash
 pytest -v
 ```
 A suíte valida:
 - Imutabilidade do schema Pydantic (anti-alucinação de privilégios).
 - Isolamento estrito de acesso entre perfis (`geral` não recebe dados de `diretoria`).
+- Execução concorrente Fan-Out / Fan-In no Plano-Executor via `Send` API.
 - Bypass de busca para perguntas genéricas.
-- Contrato MCP e sanitização de variáveis de ambiente.
+- Contrato MCP e autenticação por JWT de sessão assinado (HS256).
 - Resiliência a falhas do subprocesso do servidor MCP.
 
 ---
@@ -166,7 +178,7 @@ A suíte valida:
 
 | Vetor de Risco | Mitigação Implementada |
 |---|---|
-| **Alucinação de Papel (Role Spoofing)** | O papel (`role`) é mantido no estado imutável da aplicação e injetado via código. O LLM não pode alterar ou escolher sua permissão. |
+| **Alucinação de Papel (Role Spoofing)** | O papel (`role`) é mantido no estado imutável da aplicação e injetado via token JWT assinado (`HS256`). O LLM não pode alterar ou escolher sua permissão. |
 | **Vazamento por Similaridade ("Efeito Feijoada")** | Filtro obrigatório de perfil no SQL (`WHERE metadados->>'papel' IN ('geral', %s)`) combinado com nota de corte de relevância (`LIMIAR_DISTANCIA`). |
 | **Ataque de Oráculo** | Resposta neutra unificada caso o documento não exista ou o acesso não seja autorizado. |
 | **Vazamento de Credenciais** | Filtro estrito de variáveis de ambiente no cliente MCP, repassando apenas os segredos estritamente necessários ao processo filho. |
@@ -176,7 +188,9 @@ A suíte valida:
 ## 📚 Documentação Técnica Adicional
 
 - [Relatório Técnico do Agente Coordenador](docs/agentes/coordenador.md)
+- [Relatório Técnico do Agente Plano–Executor](docs/agentes/plano_executor.md)
 - [Registro de Decisões Arquiteturais (ADRs)](docs/decisions.md)
 - [Fronteiras e Componentes Arquiteturais](docs/architecture.md)
 - [Planejamento da Fase 3: Multiagentes](docs/fase-3-planejamento.md)
 - [Diagramas Visuais (Mermaid)](docs/diagramas/README.md)
+
