@@ -14,6 +14,8 @@ dependencies = [
     "langchain-core>=0.3.0",
     "langchain-google-genai>=2.0.0",
     "langgraph>=0.2.0",
+    "autogen-agentchat>=0.7.0",
+    "autogen-ext[gemini]>=0.7.0",
     "uuid-utils>=1.0.0",
 ]
 

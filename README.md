@@ -9,7 +9,7 @@ Repositório do estudo dirigido focado no projeto, integração segura e operaç
 O objetivo deste projeto é implementar e comparar experimentalmente três padrões arquiteturais de sistemas multiagentes:
 1. **Coordenador (*Supervisor Pattern*)** — Implementado com **LangGraph** (concluído)
 2. **Plano–Executor (*Plan-and-Execute*)** — Implementado com **LangGraph** (concluído)
-3. **Conversação em Grupo (*Group Chat*)** — Implementado com **Microsoft AutoGen** (planejado)
+3. **Conversação em Grupo (*Group Chat*)** — Implementado com **Microsoft AutoGen 0.4+** (concluído e testado)
 
 ### Regra Fundamental de Arquitetura
 Os agentes e modelos de linguagem (LLM) **nunca acessam o banco de dados diretamente** nem possuem privilégios declarados por prompt. Toda recuperação documental é obrigatoriamente intermediada por um servidor **Model Context Protocol (MCP)** via transporte `stdio`, garantindo que o controle de acesso baseado em papel (RBAC) seja aplicado no nível de dados e na camada de protocolo.
@@ -61,7 +61,8 @@ O projeto adota uma arquitetura híbrida projetada para contornar restrições d
 │   ├── agentes/               # Relatórios técnicos dos padrões implementados
 │   │   ├── README.md
 │   │   ├── coordenador.md     # Relatório técnico completo do Agente Coordenador
-│   │   └── plano_executor.md  # Relatório técnico completo do Agente Plano-Executor
+│   │   ├── plano_executor.md  # Relatório técnico completo do Agente Plano-Executor
+│   │   └── conversa_grupo.md  # Relatório técnico completo do Agente Conversação em Grupo
 │   └── diagramas/             # Diagramas em formato Mermaid (.mmd)
 │
 ├── src/                       # Código-fonte da aplicação
@@ -69,7 +70,8 @@ O projeto adota uma arquitetura híbrida projetada para contornar restrições d
 │   ├── agentes/               # Módulos de orquestração multiagentes
 │   │   ├── coordenador.py     # Grafo do Coordenador (Supervisor, Pesquisador, Redator)
 │   │   ├── plano_executor.py  # Grafo do Plano-Executor (Planner, Executores Paralelos, Sintetizador)
-│   │   └── mcp_toolkit.py     # Cliente MCP que inicia o servidor stdio
+│   │   ├── conversa_grupo.py  # Equipe AutoGen (Retrieval, Analyst, Validator)
+│   │   └── mcp_toolkit.py     # Cliente MCP e Toolkits seguros (LangChain e AutoGen)
 │   ├── autorizacao/           # Fronteira de autorização e controle de identidade
 │   ├── busca/                 # Embeddings Gemini e consultas vetoriais
 │   ├── ingestao/              # Pipeline de ingestão do corpus documental sintético
@@ -83,10 +85,12 @@ O projeto adota uma arquitetura híbrida projetada para contornar restrições d
 └── tests/                     # Suíte de testes automatizados e integrados
     ├── test_coordenador.py    # Testes automatizados do Coordenador com pytest
     ├── test_plano_executor.py # Testes automatizados do Plano-Executor com pytest
+    ├── test_conversa_grupo.py # Testes automatizados da Conversação em Grupo (AutoGen)
     ├── test_mcp_toolkit.py    # Testes do cliente/servidor MCP e sanitização
     ├── teste_banco.py         # Script utilitário para validar banco e embeddings
     ├── teste_coordenador.py   # Script de demonstração passo a passo do Coordenador
-    └── teste_plano_executor.py # Script de demonstração passo a passo do Plano-Executor
+    ├── teste_plano_executor.py # Script de demonstração passo a passo do Plano-Executor
+    └── teste_conversa_grupo.py # Script de demonstração da Conversação em Grupo
 ```
 
 ---
@@ -189,6 +193,7 @@ A suíte valida:
 
 - [Relatório Técnico do Agente Coordenador](docs/agentes/coordenador.md)
 - [Relatório Técnico do Agente Plano–Executor](docs/agentes/plano_executor.md)
+- [Relatório Técnico do Agente Conversação em Grupo](docs/agentes/conversa_grupo.md)
 - [Registro de Decisões Arquiteturais (ADRs)](docs/decisions.md)
 - [Fronteiras e Componentes Arquiteturais](docs/architecture.md)
 - [Planejamento da Fase 3: Multiagentes](docs/fase-3-planejamento.md)

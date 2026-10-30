@@ -10,6 +10,7 @@ import os
 import sys
 from typing import Any
 
+from autogen_core.tools import FunctionTool
 from langchain_core.tools import BaseTool, tool
 from mcp import Client, StdioServerParameters
 from mcp.client.stdio import get_default_environment
@@ -123,4 +124,34 @@ def criar_ferramenta_busca(role: str) -> BaseTool:
 def criar_toolkit_corporativo(role: str) -> list[BaseTool]:
     """Lista de ferramentas entregue aos agentes, já presa ao papel da sessão."""
     return [criar_ferramenta_busca(role)]
+
+
+def criar_ferramenta_autogen(role: str, alvo: Any = None) -> FunctionTool:
+    """Cria a ferramenta assíncrona do AutoGen com o papel do usuário fixado (D-010, D-013).
+
+    O papel da sessão é injetado diretamente na closure e associado ao token JWT
+    no subprocesso MCP. O modelo/LLM do AutoGen recebe apenas o parâmetro `query`.
+    """
+    if not isinstance(role, str) or not role.strip():
+        raise ValueError("role da sessão é obrigatório para criar a ferramenta AutoGen.")
+    papel_da_sessao = role.strip()
+
+    async def buscar_documentos_corporativos(query: str) -> str:
+        """Busca documentos corporativos internos na base de dados da empresa.
+        Use esta ferramenta SEMPRE que precisar responder a perguntas sobre
+        projetos da empresa, orçamentos, regras internas ou documentos em geral.
+        """
+        print(f"\n[AutoGen MCP Tool] Pesquisando por '{query}' com permissão de '{papel_da_sessao}'...")
+        resultado = await consultar_mcp_async(query, papel_da_sessao, alvo=alvo)
+        print(f"[AutoGen MCP Tool] Retorno: {resultado[:100]}...\n")
+        return resultado
+
+    return FunctionTool(
+        buscar_documentos_corporativos,
+        description=(
+            "Busca documentos corporativos internos na base de dados da empresa. "
+            "Use esta ferramenta SEMPRE que precisar responder a perguntas sobre "
+            "projetos, orçamentos, regras internas ou documentação corporativa."
+        ),
+    )
 

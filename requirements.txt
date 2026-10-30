@@ -13,10 +13,12 @@ pydantic>=2.0.0
 pyjwt>=2.8.0
 
 
-# Orquestração de Agentes (Fase 3: Coordenador, Plano-Executor)
+# Orquestração de Agentes (Fase 3: Coordenador, Plano-Executor, Conversação em Grupo)
 langchain-core>=0.3.0
 langchain-google-genai>=2.0.0
 langgraph>=0.2.0
+autogen-agentchat>=0.7.0
+autogen-ext[gemini]>=0.7.0
 
 # Utilitários de compatibilidade
 uuid-utils>=1.0.0

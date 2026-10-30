@@ -210,3 +210,54 @@ def test_servidor_com_token_forjado_retorna_erro_auth():
     texto = mcp_toolkit.consultar_mcp("qualquer", "geral", alvo=params)
     assert "erro" in texto.lower() or "acesso negado" in texto.lower()
 
+
+# ------------------------------------------------------------ ferramenta AutoGen (D-013)
+
+from autogen_core import CancellationToken
+
+
+@pytest.mark.parametrize("role_invalido", ["", "   ", None])
+def test_criar_ferramenta_autogen_sem_role_falha(role_invalido):
+    """Sem papel de sessão não existe ferramenta AutoGen: falha fechada."""
+    with pytest.raises(ValueError):
+        mcp_toolkit.criar_ferramenta_autogen(role_invalido)
+
+
+def test_schema_ferramenta_autogen_nao_expoe_role():
+    """O schema gerado para o AutoGen só expõe `query`; role/papel nunca vai ao modelo."""
+    ferramenta = mcp_toolkit.criar_ferramenta_autogen("geral")
+    schema = ferramenta.schema
+
+    assert schema["name"] == "buscar_documentos_corporativos"
+    propriedades = schema["parameters"]["properties"]
+    assert set(propriedades.keys()) == {"query"}
+    assert "role" not in propriedades
+    assert "papel" not in propriedades
+
+
+@pytest.mark.anyio
+async def test_ferramenta_autogen_executa_com_role_preso_da_sessao(monkeypatch):
+    """A execução da ferramenta AutoGen utiliza obrigatoriamente o role fixado na closure."""
+    chamadas = []
+
+    async def _mock_consultar(query, role, alvo=None):
+        chamadas.append((query, role))
+        return "dados simulados"
+
+    monkeypatch.setattr(mcp_toolkit, "consultar_mcp_async", _mock_consultar)
+
+    ferramenta = mcp_toolkit.criar_ferramenta_autogen("diretoria")
+    resultado = await ferramenta.run_json({"query": "orcamento 2027"}, CancellationToken())
+
+    assert resultado == "dados simulados"
+    assert chamadas == [("orcamento 2027", "diretoria")]
+
+
+@pytest.mark.anyio
+async def test_ferramenta_autogen_respeita_isolamento_real():
+    ferramenta_geral = mcp_toolkit.criar_ferramenta_autogen('geral')
+    res_geral = await ferramenta_geral.run_json(
+        {'query': 'Qual o orcamento do projeto secreto?'}, CancellationToken()
+    )
+    assert '2027' not in res_geral
+    assert 'aquisicoes' not in res_geral.lower()

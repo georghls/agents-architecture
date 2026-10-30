@@ -163,6 +163,39 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Consequências e riscos: O tempo de execução das buscas ocorre de forma concorrente, aproveitando o paralelismo do LangGraph. Perguntas simples tornam-se mais rápidas e econômicas sem violar a capacidade de paralelizar até 3 frentes para perguntas complexas. O servidor MCP e a API de embeddings do Gemini recebem até 3 chamadas simultâneas.
 - Como verificar: Testes automatizados em `tests/test_plano_executor.py` conferem que o schema do plano não aceita injeção de papel, que o plano respeita o limite de 1 a 3 tarefas, que perguntas gerais não vazam dados restritos e que diretoria obtém os dados autorizados após consolidação das tarefas.
 
+### D-013 — Padrão Conversação em Grupo com Microsoft AutoGen 0.4+, três personas especializadas e terminação por consenso/auditoria (2026-10-23)
+
+- Status: aceito
+- Contexto: O planejamento acadêmico e o diagrama da Fase 1 (`conversacao-em-grupo.mmd`) estabelecem a comparação do padrão Conversação em Grupo (*Group Chat*) orquestrado pelo AutoGen contra os padrões Coordenador e Plano-Executor (implementados no LangGraph). O padrão requer uma dinâmica social de equipe com três papéis: Retrieval (único com acesso MCP), Analyst (síntese) e Validator (auditoria), compartilhando a mesma base de dados corporativa e as regras de segurança RBAC já homologadas.
+- Decisão:
+  1. Utilizar o ecossistema moderno do Microsoft AutoGen 0.4+ (`autogen-agentchat` e `autogen-ext[gemini]`), consumindo o modelo de chat do Google Gemini via `google-genai` (alinhado a `src/config.py`).
+  2. Adotar a orquestração `RoundRobinGroupChat` (revezamento circular sequencial: Usuário -> Retrieval -> Analyst -> Validator) em detrimento do `SelectorGroupChat`. Essa escolha elimina a sobrecarga de uma chamada extra de LLM a cada turno para mediação de orador (economizando cerca de 50% de requisições e tokens), evita loops estocásticos e garante a ordem lógica necessária: o Retrieval busca as evidências no MCP, o Analyst formula a síntese e o Validator audita antes de emitir a finalização.
+     - `Retrieval Agent`: único munido da ferramenta de busca MCP (`buscar_documentos_corporativos`).
+     - `Analyst Agent`: examina as evidências documentais retornadas e formula a resposta.
+     - `Validator Agent`: verifica a fidelidade da resposta às evidências e emite a condição de término textual `TERMINATE`.
+  3. Preservar o isolamento de segurança: a ferramenta MCP entregue ao `Retrieval Agent` é instanciada para a sessão do usuário com o token JWT assinado (`HS256`) fixando o `role` (`diretoria` ou `geral`), sem expor o papel ao modelo (D-010, D-011).
+  4. Para evitar loops infinitos ou consumo descontrolado de tokens/cotas da API Gemini, configurar término duplo: detecção do sinal `TERMINATE` pelo validador e limite estrito de mensagens (`max_messages=6`).
+- Alternativas consideradas:
+  - Usar `SelectorGroupChat` (mediador dinâmico via LLM): descartado por dobrar o custo de requisições por rodada, aumentar a latência global e introduzir instabilidade na ordem de execução.
+  - Usar AutoGen clássico 0.2 (`pyautogen` legado): descartado em favor do AutoGen 0.4+ com melhor suporte a tipagem, assincronismo, modularidade e integração oficial com Gemini.
+  - Implementar Conversação em Grupo dentro do LangGraph: descartado para manter a comparação acadêmica entre ecossistemas diferentes definida no planejamento original.
+- Consequências e riscos: Permite avaliar na prática a experiência de desenvolvimento e a performance do AutoGen comparado ao LangGraph. O modelo conversacional pode gerar maior latência total e consumo de tokens por resposta devido aos múltiplos turnos de diálogo entre agentes.
+- Como verificar: Suíte `tests/test_conversa_grupo.py` com testes determinísticos (validando que apenas Retrieval tem tools, papéis e limites de turnos) e testes de integração com Gemini + MCP comprovando que perfil geral não vaza dados confidenciais e perfil diretoria recupera dados autorizados.
+
+### D-014 — Dupla interface de execução para agentes: Assíncrona Nativa e Síncrona de Conveniência (2026-10-27)
+
+- Status: aceito
+- Contexto: O ecossistema do Microsoft AutoGen 0.4 é construído de forma nativamente assíncrona (`asyncio`), exigindo gerenciamento explícito de loop de eventos (`await equipe.run(...)`). No entanto, os outros dois agentes do projeto (Coordenador e Plano-Executor no LangGraph) expõem chamadas síncronas diretas, e os consumidores do projeto incluem scripts de linha de comando (CLI), suítes de teste e a futura interface visual da Fase 4 (como Streamlit), que opera de forma síncrona por padrão e sofre com conflitos de loops assíncronos.
+- Decisão:
+  1. Expor a função assíncrona nativa `executar_conversa_grupo_async` para preservar a concorrência e preparar o terreno para streaming e serviços de alta performance (ex: FastAPI).
+  2. Disponibilizar a função síncrona `executar_conversa_grupo` como uma fachada de conveniência que encapsula internamente o `asyncio.run()`, permitindo invocar o agente com apenas uma linha de código em scripts de terminal, testes e ferramentas como Streamlit.
+  3. Padronizar a assinatura e o formato de saída entre os três padrões arquiteturais (`executar_coordenador`, `executar_plano_executor` e `executar_conversa_grupo`).
+- Alternativas consideradas:
+  - Expor apenas a interface assíncrona: descartado por obrigar o desenvolvedor a escrever rotinas verbosas de gerenciamento de loop em scripts simples e quebrar a uniformidade de uso com os outros dois padrões.
+  - Expor apenas a interface síncrona: descartado por anular o poder de concorrência nativo do AutoGen 0.4.
+- Consequências e riscos: Garante máxima flexibilidade de consumo sem adicionar complexidade para quem usa. A interface síncrona não deve ser chamada de dentro de um loop de eventos `asyncio` já em execução (para esses casos, deve-se usar a versão `_async`).
+- Como verificar: Testes automatizados em `tests/test_conversa_grupo.py` e scripts manuais invocam ambas as interfaces e obtêm o mesmo resultado padronizado.
+
 ## Modelo para novas entradas
 
 ```md
