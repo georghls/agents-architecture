@@ -10,6 +10,7 @@ from src.config import url_banco
 
 MENSAGEM_SEM_RESULTADO = "Nenhum documento encontrado nos registros autorizados para o seu perfil."
 MENSAGEM_ERRO_AUTH = "Erro MCP: Sessão não autenticada ou token de identidade inválido. Acesso negado."
+MENSAGEM_ERRO_SISTEMA = "Erro interno no servidor de documentos: falha temporária de infraestrutura."
 LIMIAR_DISTANCIA = 0.60  # Nota de corte: distância máxima aceitável para considerar um documento relevante
 
 # 1. Inicializa o Servidor MCP com um nome amigável
@@ -42,33 +43,38 @@ def buscar_no_banco(pergunta: str, papel_do_usuario: str | None = None) -> str:
         except PermissionError:
             return MENSAGEM_ERRO_AUTH
 
-    vetor_pergunta = get_embedding(pergunta)
     papel_usuario_normalizado = (papel_do_usuario or "geral").strip().lower()
-    
-    sql_busca = """
-    SELECT 
-        conteudo, 
-        (embedding <=> %s::vector) AS distancia
-    FROM documentos 
-    WHERE metadados->>'papel' IN ('geral', %s)
-      AND (embedding <=> %s::vector) <= %s
-    ORDER BY distancia ASC
-    LIMIT 1;
-    """
-    
-    with psycopg.connect(url_banco()) as conexao:
-        with conexao.cursor() as cursor:
-            cursor.execute(
-                sql_busca, 
-                (str(vetor_pergunta), papel_usuario_normalizado, str(vetor_pergunta), LIMIAR_DISTANCIA)
-            )
-            resultado = cursor.fetchone()
-            
-            if not resultado:
-                return MENSAGEM_SEM_RESULTADO
-            
-            conteudo, distancia = resultado
-            return f"Documento encontrado: {conteudo}"
+
+    try:
+        vetor_pergunta = get_embedding(pergunta)
+        
+        sql_busca = """
+        SELECT 
+            conteudo, 
+            (embedding <=> %s::vector) AS distancia
+        FROM documentos 
+        WHERE metadados->>'papel' IN ('geral', %s)
+          AND (embedding <=> %s::vector) <= %s
+        ORDER BY distancia ASC
+        LIMIT 1;
+        """
+        
+        with psycopg.connect(url_banco()) as conexao:
+            with conexao.cursor() as cursor:
+                cursor.execute(
+                    sql_busca, 
+                    (str(vetor_pergunta), papel_usuario_normalizado, str(vetor_pergunta), LIMIAR_DISTANCIA)
+                )
+                resultado = cursor.fetchone()
+                
+                if not resultado:
+                    return MENSAGEM_SEM_RESULTADO
+                
+                conteudo, distancia = resultado
+                return f"Documento encontrado: {conteudo}"
+    except Exception as erro:
+        print(f"[Servidor MCP] Erro de infraestrutura ao buscar no banco: {erro}", file=sys.stderr)
+        return MENSAGEM_ERRO_SISTEMA
 
 
 # 2. Transforma a função numa ferramenta (tool) oficial do MCP

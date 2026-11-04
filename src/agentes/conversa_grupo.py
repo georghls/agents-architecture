@@ -27,6 +27,7 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from src.agentes.mcp_toolkit import criar_ferramenta_autogen
 from src.config import chave_gemini
+from src.observabilidade.telemetria import obter_trace_atual, iniciar_rastreamento
 
 # Modelo padrão otimizado e disponível
 MODELO_PADRAO_GEMINI = "gemini-flash-lite-latest"
@@ -213,6 +214,7 @@ async def executar_conversa_grupo_async(
     model_client: Any | None = None,
     alvo_mcp: Any | None = None,
     max_mensagens: int = 6,
+    run_id: str | None = None,
 ) -> dict:
     """Executa a conversa em grupo de forma assíncrona.
 
@@ -225,6 +227,12 @@ async def executar_conversa_grupo_async(
       - 'turnos': Quantidade total de mensagens trocadas.
       - 'motivo_parada': Motivo da finalização do chat.
     """
+    trace = obter_trace_atual()
+    gerenciador = None
+    if not trace:
+        gerenciador = iniciar_rastreamento(padrao="conversa_grupo", pergunta=pergunta, papel=papel, run_id=run_id)
+        trace = gerenciador.__enter__()
+
     deve_fechar_cliente = model_client is None
     cliente = model_client or criar_cliente_modelo()
 
@@ -249,6 +257,14 @@ async def executar_conversa_grupo_async(
             fonte = getattr(msg, "source", "sistema")
             tipo = msg.__class__.__name__
 
+            if trace:
+                usage = getattr(msg, "models_usage", None)
+                if usage:
+                    inp = getattr(usage, "prompt_tokens", 0)
+                    out = getattr(usage, "completion_tokens", 0)
+                    trace.registrar_tokens(inp, out)
+                    trace.registrar_chamada_llm(1)
+
             # Formata o conteúdo para string legível caso seja lista
             if isinstance(conteudo, list):
                 conteudo_str = "\n".join(str(getattr(c, "content", c)) for c in conteudo)
@@ -264,6 +280,11 @@ async def executar_conversa_grupo_async(
         resposta_final = _extrair_resposta_final(resultado.messages)
         evidencias = _extrair_evidencias(resultado.messages)
 
+        if trace:
+            trace.definir_resposta(resposta_final)
+            trace.metadados["turnos"] = len(resultado.messages)
+            trace.metadados["motivo_parada"] = str(resultado.stop_reason)
+
         return {
             "pergunta": pergunta,
             "papel": papel,
@@ -274,6 +295,8 @@ async def executar_conversa_grupo_async(
             "motivo_parada": str(resultado.stop_reason),
         }
     finally:
+        if gerenciador is not None:
+            gerenciador.__exit__(*sys.exc_info())
         if deve_fechar_cliente and hasattr(cliente, "close"):
             await cliente.close()
             # No Windows, dá tempo aos sockets de conexão do loop fecharem graciosamente
@@ -286,6 +309,7 @@ def executar_conversa_grupo(
     model_client: Any | None = None,
     alvo_mcp: Any | None = None,
     max_mensagens: int = 6,
+    run_id: str | None = None,
 ) -> dict:
     """Interface síncrona para execução da conversa em grupo."""
     return asyncio.run(
@@ -295,5 +319,6 @@ def executar_conversa_grupo(
             model_client=model_client,
             alvo_mcp=alvo_mcp,
             max_mensagens=max_mensagens,
+            run_id=run_id,
         )
     )

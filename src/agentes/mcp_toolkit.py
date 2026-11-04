@@ -17,6 +17,7 @@ from mcp.client.stdio import get_default_environment
 
 from src.autorizacao.tokens import gerar_token_sessao
 from src.config import RAIZ_PROJETO
+from src.observabilidade.telemetria import obter_trace_atual
 
 # Contrato do servidor (D-007 / D-011). O LLM só informa `query`; o papel de acesso
 # é autenticado via JWT de sessão (A-05) e a ferramenta MCP recebe apenas `pergunta`.
@@ -73,6 +74,15 @@ async def consultar_mcp_async(query: str, role: str, alvo: Any = None) -> str:
     Permite concorrência nativa para tarefas paralelas (D-001, D-012).
     """
     alvo = alvo if alvo is not None else parametros_servidor(role=role)
+    trace = obter_trace_atual()
+    if trace:
+        trace.registrar_chamada_mcp(1)
+        with trace.span("mcp_busca", tipo="tool_mcp", detalhes={"query": query, "role": role}):
+            try:
+                return await _chamar_mcp(alvo, query)
+            except Exception as erro:  # noqa: BLE001 - transporte/SDK podem lançar classes variadas
+                print(f"[Cliente MCP] Falha ao consultar o servidor (async): {erro!r}", file=sys.stderr)
+                return "Erro MCP: não foi possível consultar o servidor de documentos."
     try:
         return await _chamar_mcp(alvo, query)
     except Exception as erro:  # noqa: BLE001 - transporte/SDK podem lançar classes variadas

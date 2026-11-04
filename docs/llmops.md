@@ -30,3 +30,22 @@ Timeout do servidor MCP, documento removido após indexação, erro de embedding
 ## Dashboard e relatório
 
 Exibir série temporal, percentis de latência, custo estimado, chamadas MCP/LLM, erros e qualidade por padrão. O relatório da Fase 5 deve incluir o método de medição, tabelas comparáveis, exemplos anonimizados, gargalos, limites e propostas de melhoria. A interface de perguntas é outro objetivo do planejamento e terá escopo próprio.
+
+---
+
+## Implementação Concluída na Fase 4
+
+1. **Camada de Telemetria e FinOps (`src/observabilidade/`)**:
+   - `telemetria.py`: persistência local de `execucoes`, `spans` e `avaliacoes` no SQLite (`data/telemetria.db`). Rastreamento via `ContextVar` compatível com LangGraph e AutoGen 0.4.
+   - `custos.py`: precificação oficial versionada do Gemini em USD e BRL.
+2. **Benchmark e Golden Dataset (`data/golden_dataset.json`)**:
+   - 24 perguntas balanceadas em 5 categorias (públicas, confidenciais diretoria, confidenciais RH, fora do corpus para anti-alucinação e injeção de prompt adversária).
+   - Pipeline de benchmark automatizado em `scripts/executar_benchmark.py`.
+3. **Avaliação Semântica (Evals) e Anti-Alucinação (`avaliador.py`)**:
+   - LLM-as-a-Judge com temperatura 0 e Pydantic estruturado (`VereditoJuiz`).
+   - Verificação determinística de RBAC para prevenir e auditar vazamentos de credenciais.
+4. **Resiliência e Engenharia do Caos (`tests/resiliencia/`)**:
+   - 10 testes automatizados cobrindo transporte MCP, tokens forjados/expirados, queda de banco PostgreSQL e injeção de prompt direta/indireta.
+5. **Interface de Usuário e Dashboard (`src/ui/app.py`)**:
+   - Aplicação unificada em Streamlit com aba de Chat interativo e aba de Dashboard analítico com gráficos comparativos em Plotly.
+

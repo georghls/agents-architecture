@@ -164,17 +164,37 @@ Executa o fluxo completo do Plan-and-Execute com decomposição em tarefas paral
 python -m src.agentes.plano_executor
 ```
 
-### E. Executar a Suíte de Testes Automatizados com `pytest`
+### E. Executar a Conversação em Grupo (Microsoft AutoGen 0.4+)
+Executa o fluxo conversacional em equipe com três agentes em Round-Robin (Retrieval, Analyst e Validator):
 ```bash
-pytest -v
+python -m src.agentes.conversa_grupo
+```
+
+### F. Executar o Benchmark Automatizado de LLMOps
+Submete o gabarito fixo (`data/golden_dataset.json`) aos três padrões arquiteturais, coletando telemetria e notas de auditoria no SQLite local:
+```bash
+python scripts/executar_benchmark.py --limite 3 --modo-avaliador deterministico
+```
+
+### G. Iniciar a Interface de Usuário e Dashboard de LLMOps (Streamlit)
+Abre a aplicação web com Chat Multiagente interativo e Dashboard de monitoramento de métricas em tempo real:
+```bash
+streamlit run src/ui/app.py
+```
+
+### H. Executar a Suíte de Testes Automatizados com `pytest`
+```bash
+# Executa todos os testes unitários, de observabilidade e de resiliência (sem gastar cotas de LLM)
+pytest -v -m "not llm"
 ```
 A suíte valida:
 - Imutabilidade do schema Pydantic (anti-alucinação de privilégios).
 - Isolamento estrito de acesso entre perfis (`geral` não recebe dados de `diretoria`).
 - Execução concorrente Fan-Out / Fan-In no Plano-Executor via `Send` API.
-- Bypass de busca para perguntas genéricas.
+- Dinâmica Round-Robin e terminação por consenso no AutoGen 0.4.
 - Contrato MCP e autenticação por JWT de sessão assinado (HS256).
-- Resiliência a falhas do subprocesso do servidor MCP.
+- Resiliência a falhas do subprocesso do servidor MCP, queda de banco e injeção indireta.
+- Integridade do Golden Dataset, cálculos de FinOps e avaliação semântica por LLM-as-a-Judge.
 
 ---
 

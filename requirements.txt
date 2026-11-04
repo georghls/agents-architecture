@@ -23,5 +23,9 @@ autogen-ext[gemini]>=0.7.0
 # Utilitários de compatibilidade
 uuid-utils>=1.0.0
 
+# Interface de Usuário e Dashboard de LLMOps (Fase 4)
+streamlit>=1.35.0
+plotly>=5.20.0
+
 # Testes automatizados
 pytest>=8.0.0

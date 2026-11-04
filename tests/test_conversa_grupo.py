@@ -5,6 +5,7 @@ Contém:
 2. Testes de integração real com Gemini e MCP (marcados com @pytest.mark.llm).
 """
 
+from pathlib import Path
 import pytest
 from autogen_agentchat.messages import TextMessage
 from autogen_core.models import CreateResult, ModelInfo, RequestUsage
@@ -17,6 +18,7 @@ from src.agentes.conversa_grupo import (
     _extrair_resposta_final,
     _extrair_evidencias,
 )
+from src.observabilidade.telemetria import iniciar_rastreamento
 
 
 # ----------------------------------------------------------------------
@@ -110,15 +112,17 @@ def test_extracao_resposta_final_fallback_validador():
 
 
 @pytest.mark.anyio
-async def test_execucao_com_cliente_simulado():
+async def test_execucao_com_cliente_simulado(tmp_path: Path):
     """Garante que a orquestração do RoundRobinGroupChat conclui e gera o formato esperado."""
     cliente = _cliente_falso_para_teste()
-    resultado = await executar_conversa_grupo_async(
-        pergunta="Pergunta teste",
-        papel="geral",
-        model_client=cliente,
-        max_mensagens=3,
-    )
+    banco_temporario = tmp_path / "telemetria_teste.db"
+    with iniciar_rastreamento("conversa_grupo", "Pergunta teste", "geral", caminho_banco=banco_temporario):
+        resultado = await executar_conversa_grupo_async(
+            pergunta="Pergunta teste",
+            papel="geral",
+            model_client=cliente,
+            max_mensagens=3,
+        )
 
     assert resultado["pergunta"] == "Pergunta teste"
     assert resultado["papel"] == "geral"

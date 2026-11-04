@@ -196,6 +196,113 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Consequências e riscos: Garante máxima flexibilidade de consumo sem adicionar complexidade para quem usa. A interface síncrona não deve ser chamada de dentro de um loop de eventos `asyncio` já em execução (para esses casos, deve-se usar a versão `_async`).
 - Como verificar: Testes automatizados em `tests/test_conversa_grupo.py` e scripts manuais invocam ambas as interfaces e obtêm o mesmo resultado padronizado.
 
+### D-015 — Arquitetura de Observabilidade e LLMOps com Telemetria Desacoplada e Persistência SQLite Local (2026-10-30)
+
+- Status: aceito
+- Contexto: O planejamento original (Fase 4) exige instrumentação de latência, tokens, custos e mitigação de alucinação comparando os três padrões arquiteturais (LangGraph Coordenador, LangGraph Plano-Executor e AutoGen Conversação em Grupo). A instrumentação precisa ser agnóstica a frameworks (LangChain vs AutoGen), suportar o subprocesso stdio do MCP, rodar sem dependências de clusters Docker pesados e ser 100% reproduzível pela banca acadêmica.
+- Decisão:
+  1. Implementar o módulo central `src/observabilidade/` com coletor nativo de telemetria (`telemetria.py`), persistindo execuções, spans e métricas em banco SQLite local (`data/telemetria.db`).
+  2. Versionar a tabela de preços de tokens de LLM e embeddings em `src/observabilidade/custos.py` para FinOps transparente com cálculo de custos em USD e BRL.
+  3. Instrumentar as fachadas de execução dos agentes e a ponte MCP (`mcp_toolkit.py`), associando cada consulta a um `run_id` único e registrando latência total, tempo de subprocesso MCP, tokens e conformidade de papel RBAC.
+  4. Manter o design aberto para integração opcional com plataformas de tracing como Langfuse Cloud via variáveis de ambiente, sem acoplamento obrigatório.
+- Alternativas consideradas:
+  - LangSmith isolado: descartado por falta de suporte nativo ao AutoGen 0.4 e forte acoplamento ao ecossistema LangChain.
+  - Cluster local Docker com Phoenix/SigNoz: descartado pelo alto consumo de memória e incompatibilidade com restrições locais de sistema, gerando fricção desnecessária para avaliação da banca.
+  - Logs textuais simples em arquivo/terminal: descartados por não permitirem consultas analíticas, agregações estatísticas (P50/P90) e visualização no dashboard.
+- Consequências e riscos: Garante independência de fornecedores e execução 100% autossuficiente e determinística em qualquer máquina. O SQLite não é projetado para milhões de gravações simultâneas em produção web massiva, concessão perfeitamente justificada para o escopo e volume de benchmark acadêmico.
+- Como verificar: Suíte `tests/test_observabilidade.py` testa persistência no SQLite, cálculo exato de custos por modelo, propagação de `run_id` e integridade das métricas capturadas.
+
+### D-016 — Golden Dataset de Benchmark e Expansão do Corpus Sintético (2026-10-30)
+
+- Status: aceito
+- Contexto: Para cumprir as diretrizes metodológicas do planejamento acadêmico e de `docs/llmops.md`, a comparação entre os três padrões arquiteturais (Coordenador, Plano–Executor e Conversação em Grupo) exige um conjunto idêntico, balanceado e estruturado de perguntas com gabarito de avaliação (Golden Dataset). O corpus de 4 documentos da Fase 2 precisava ser enriquecido de forma controlada para suportar testes de alucinação e injeção indireta.
+- Decisão:
+  1. Expandir o pipeline de ingestão (`src/ingestao/ingestao.py`) de forma idempotente, adicionando 5 novos documentos sintéticos (jornada flexível, reembolso de quilometragem, aquisição Latam M&A, credenciais de cofre TI e diretriz com injeção indireta de prompt).
+  2. Criar `data/golden_dataset.json` com 24 perguntas padronizadas distribuídas em 5 categorias rigorosas:
+     - 6 Públicas / Gerais (recuperação simples de fatos e valores).
+     - 6 Confidenciais Diretoria (teste pareado com perfil `geral` esperando bloqueio e `diretoria` esperando sucesso).
+     - 4 Confidenciais RH (teste de privilégio departamental estrito).
+     - 4 Fora do Corpus (avaliação de alucinação e capacidade de reportar ausência de dados).
+     - 4 Adversariais / Injeção de Prompt (testes de bypass de RBAC, jailbreak e neutralização de injeção indireta).
+  3. Cada item declara formalmente `perfil_esperado`, `resposta_esperada_contem`, `resposta_esperada_nao_contem`, `deve_conter_evidencia` e `espera_bloqueio_rbac`.
+- Alternativas consideradas: Perguntas ad-hoc geradas aleatoriamente em runtime (descartado por falta de reprodutibilidade científica); benchmark público genérico em inglês como MMLU (descartado por não avaliar controle de acesso RBAC via MCP).
+- Consequências e riscos: Estabelece o gabarito fixo e imutável para os benchmarks automatizados da Fase 4 e dados do relatório da Fase 5.
+- Como verificar: Suíte `tests/test_golden_dataset.py` valida schema, campos obrigatórios e balanceamento de categorias. O script de ingestão confirma os 9 documentos no Supabase.
+
+### D-017 — Avaliação Semântica e Anti-Alucinação via LLM-as-a-Judge com Schemas Estruturados (2026-10-30)
+
+- Status: aceito
+- Contexto: O planejamento acadêmico exige explicitamente a mensuração e mitigação de alucinações nas respostas dos três padrões multiagentes. Métricas puramente léxicas (como BLEU ou ROUGE) falham na compreensão de sinônimos e contexto, enquanto auditorias humanas manuais são inviáveis para centenas de execuções de benchmark.
+- Decisão:
+  1. Implementar o módulo `src/observabilidade/avaliador.py` com a técnica LLM-as-a-Judge configurada em `temperature=0.0`, consumindo o Google Gemini com prompts restritivos de auditoria e saída estruturada via Pydantic (`VereditoJuiz`).
+  2. Avaliar duas dimensões semânticas centrais:
+     - *Fidelidade Documental (Groundedness)*: Nota de 0.0 a 1.0 e detecção de fatos inventados não presentes nas evidências do servidor MCP. Respostas educadas de "não sei" para perguntas fora do corpus recebem nota 1.0 (anti-alucinação bem-sucedida).
+     - *Relevância*: Nota de 0.0 a 1.0 para pertinência direta em relação à pergunta formulada.
+  3. Integrar uma camada determinística de segurança (RBAC Compliance): se a resposta vazar termos proibidos configurados no gabarito (ex: "50 milhões" sob papel `geral`), o score de segurança é rebaixado automaticamente a 0.0 pelo código Python, sobrepondo-se a qualquer julgamento generativo.
+  4. Adicionar a tabela `avaliacoes` no SQLite local (`data/telemetria.db`), com suporte a agregações analíticas por padrão (`obter_metricas_qualidade`).
+  5. Suportar o modo `juiz_llm="deterministico"` e injeção de dublês para garantir testes unitários rápidos e determinísticos sem custo de tokens.
+- Alternativas consideradas: Depender exclusivamente de frameworks como TruLens ou DeepEval (descartado por dependências adicionais pesadas e incompatibilidades com o ambiente); depender apenas de regex (descartado por incapacidade de julgar alucinações semânticas sutis).
+- Consequências e riscos: Padroniza uma esteira formal e auditável de Evals para o benchmark final. O custo do juiz é controlado pelo uso do modelo veloz e econômico `gemini-flash-lite-latest`.
+- Como verificar: Suíte `tests/test_avaliador.py` valida detecção de alucinação via dublê, neutralização de vazamento RBAC e cálculo agregado de métricas de qualidade.
+
+### D-018 — Bateria de Testes de Resiliência e Engenharia do Caos (2026-10-30)
+
+- Status: aceito
+- Contexto: O planejamento original (Fase 4) e `docs/llmops.md` exigem testes explícitos de resiliência e injeção de falhas controladas (timeout de MCP, token inválido, indisponibilidade de banco de dados, resultado vazio e injeção indireta de prompt). Sistemas multiagentes são propensos a falhas em cascata se um componente falhar silenciosamente ou vazar exceções internas para o usuário final.
+- Decisão:
+  1. Estruturar a suíte `tests/resiliencia/` cobrindo 4 domínios críticos:
+     - `test_caos_mcp.py`: simula falhas no transporte stdio (subprocesso inexistente, crash forçado, timeout) e verifica degradação graciosa com retorno `Erro MCP: ...` auditável, sem crash do agente.
+     - `test_caos_seguranca.py`: valida a garantia de falha fechada para tokens JWT ausentes, corrompidos, expirados ou assinados com chave espúria no servidor MCP.
+     - `test_caos_rede_e_banco.py`: simula falhas de conexão no PostgreSQL/Supabase e na API de embeddings, comprovando que URLs de conexão, senhas ou tracebacks de baixo nível nunca vazam para a resposta final.
+     - `test_prompt_injection.py`: valida a separação formal entre dados e instruções, comprovando a neutralização de injeções diretas e indiretas (comandos maliciosos embutidos em documentos recuperados).
+  2. Implementar tratamento defensivo de exceções no servidor MCP (`src/mcp/server.py`) para encapsular erros de banco de dados ou embeddings em mensagens seguras e auditáveis (`MENSAGEM_ERRO_SISTEMA`).
+- Alternativas consideradas: Testes puramente manuais (descartado por falta de reprodutibilidade contínua em CI); bibliotecas genéricas de Chaos Engineering (descartado por complexidade desnecessária frente ao uso de mocks e injeção de falhas com pytest).
+- Consequências e riscos: Garante que todos os 3 padrões arquiteturais operem de forma robusta e previsível mesmo sob condições adversas de infraestrutura e ataques adversários.
+- Como verificar: Execução automatizada via `python -m pytest tests/resiliencia/ -v`.
+
+### D-019 — Pipeline Automatizado de Benchmark e Coleta de Métricas Comparativas (2026-10-30)
+
+- Status: aceito
+- Contexto: Para atender ao objetivo principal do estudo dirigido — comparar cientificamente Coordenador, Plano–Executor e Conversação em Grupo —, é necessário um orquestrador unificado de benchmark que submeta o gabarito fixo de perguntas (`data/golden_dataset.json`) aos três padrões, colete a telemetria ponta a ponta (latência, tokens, custos) e registre as notas do avaliador semântico e RBAC no SQLite local (`data/telemetria.db`).
+- Decisão:
+  1. Desenvolver `scripts/executar_benchmark.py` com interface de linha de comando flexível (`--padroes`, `--limite`, `--categorias`, `--modo-avaliador`, `--delay`).
+  2. Implementar tratamento defensivo de falhas de rede (retentativas e isolamento por pergunta) com taxa de pausa configurável para evitar esgotamento de cotas de taxa de requisição (HTTP 429).
+  3. Vincular a execução do agente imediatamente ao módulo `avaliador.py`, salvando as avaliações semânticas vinculadas pelo `run_id`.
+  4. Gerar resumo executivo comparativo no terminal ao término da esteira (latência média, custo total e unitário em USD/BRL, total de tokens, taxa de alucinação e conformidade RBAC).
+- Alternativas consideradas: Executar scripts manuais separados para cada agente (descartado por inconsistência de timestamps e condições de teste); armazenar métricas apenas em memória (descartado por impedir persistência histórica e consumo pelo Dashboard).
+- Consequências e riscos: Gera a base empírica primária e reprodutível que alimentará o Dashboard da Fase 4 e as tabelas e gráficos do relatório técnico da Fase 5.
+- Como verificar: Execução de teste do script com limite amostral (`python scripts/executar_benchmark.py --limite 2 --modo-avaliador deterministico`), conferindo a gravação de execuções e avaliações no SQLite.
+
+### D-020 — Interface de Usuário e Dashboard Integrados em Streamlit (2026-10-30)
+
+- Status: aceito
+- Contexto: O planejamento original (Fase 4 e Entregáveis do PDF) exige simultaneamente dois produtos visuais: uma Interface de Usuário para interação com os agentes orquestrados e um Dashboard de Monitoramento de LLMOps com métricas das execuções. O ambiente de desenvolvimento no Windows exige uma solução leve, em Python puro e sem compilações C++.
+- Decisão:
+  1. Adotar o **Streamlit** integrado com **Plotly** (`src/ui/app.py`) como frontend unificado em abas:
+     - *Aba Chat*: permite selecionar o padrão multiagente (Coordenador, Plano–Executor ou Grupo), alternar o papel RBAC (`geral` vs `diretoria`), interagir em tempo real e inspecionar os trechos MCP e telemetria (latência, tokens e custo).
+     - *Aba Dashboard*: exibe KPIs agregados e gráficos comparativos de latência (s), consumo financeiro (R$/USD), volume de tokens, taxa de alucinação e conformidade RBAC.
+     - *Aba Auditoria*: tabela interativa com inspeção detalhada de spans e logs de execução.
+  2. Conectar a interface diretamente ao banco SQLite local (`data/telemetria.db`), garantindo sincronização imediata com os dados gerados tanto pelo chat interativo quanto pela CLI de benchmark.
+- Alternativas consideradas: Desenvolver um frontend separado em React/TypeScript com backend FastAPI (descartado por adicionar complexidade desnecessária e desviar o foco da pesquisa em IA); utilizar Gradio (descartado por menor flexibilidade para dashboards analíticos com gráficos e abas complexas).
+- Consequências e riscos: Permite que o professor ou a banca avaliadora execute a aplicação com um único comando (`streamlit run src/ui/app.py`), acessando todos os entregáveis do projeto em uma experiência fluida no navegador.
+- Como verificar: Inicializar a aplicação Streamlit no terminal e validar a renderização das abas, a execução dos agentes com telemetria e a atualização dos gráficos Plotly.
+
+### D-021 — Dashboard em Modo 'Arena Comparativa' com Execução Simultânea dos Três Padrões (2026-11-04)
+
+- Status: aceito
+- Contexto: No design original da interface, o usuário precisava escolher previamente um único agente no selectbox para rodar a pergunta. No entanto, o objetivo central da pesquisa acadêmica é comparar experimentalmente o comportamento dos três padrões (Coordenador, Plano–Executor e Conversação em Grupo) diante da mesma pergunta e sob o mesmo perfil RBAC. Selecionar um agente por vez gerava atrito e impedia a visualização comparativa imediata das métricas.
+- Decisão:
+  1. Redesenhar a interface do Streamlit (`src/ui/app.py`): o usuário seleciona apenas o perfil de autorização (`geral` vs `diretoria`) e digita a pergunta corporativa.
+  2. Ao submeter a pergunta, o sistema executa automaticamente os **três padrões arquiteturais em sequência** contra o mesmo servidor MCP e registra a telemetria ponta a ponta de cada um no SQLite.
+  3. Exibir imediatamente na tela:
+     - Três colunas comparativas lado a lado com a resposta final de cada padrão, latência (s), tokens e custo (R$).
+     - Gráficos comparativos instantâneos da rodada (Latência Lado a Lado, Tokens e FinOps).
+     - Dashboard consolidado com métricas históricas agregadas e matriz comparativa.
+  4. Filtrar dados simulados de testes unitários (`resposta_final NOT LIKE 'Resposta simulada%'`) das agregações para evitar distorções nas métricas do estudo.
+- Alternativas consideradas: Manter o chat isolado por agente (descartado por não atender ao propósito comparativo do estudo); rodar os três agentes em paralelo com threads assíncronas (descartado para evitar picos simultâneos de conexões MCP e limites de taxa 429 no Gemini).
+- Consequências e riscos: A submissão de uma pergunta leva mais tempo total para concluir (soma do tempo dos três agentes), mas entrega a matriz analítica completa instantaneamente para o pesquisador.
+- Como verificar: Executar uma pergunta no app Streamlit com papel `geral` e `diretoria` e verificar a renderização simultânea das 3 respostas e dos gráficos comparativos da rodada.
+
 ## Modelo para novas entradas
 
 ```md

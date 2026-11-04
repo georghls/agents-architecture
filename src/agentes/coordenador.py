@@ -1,5 +1,6 @@
 import os
-from typing import TypedDict, Annotated, Sequence, Literal
+import sys
+from typing import TypedDict, Annotated, Sequence, Literal, Optional
 from pydantic import BaseModel, Field
 
 from langchain_core.callbacks import BaseCallbackHandler
@@ -10,6 +11,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.agentes.mcp_toolkit import criar_ferramenta_busca
 from src.config import chave_gemini
+from src.observabilidade.telemetria import obter_trace_atual, iniciar_rastreamento
 
 
 # 1. MONITOR E CONTADOR DE CHAMADAS DE API
@@ -26,6 +28,9 @@ class MonitorAPI(BaseCallbackHandler):
 
     def on_llm_end(self, response, **kwargs):
         self.chamadas_llm += 1
+        trace = obter_trace_atual()
+        if trace:
+            trace.registrar_chamada_llm(1)
         for generations in getattr(response, "generations", []):
             for gen in generations:
                 msg = getattr(gen, "message", None)
@@ -34,6 +39,8 @@ class MonitorAPI(BaseCallbackHandler):
                     self.input_tokens += usage.get("input_tokens", 0)
                     self.output_tokens += usage.get("output_tokens", 0)
                     self.total_tokens += usage.get("total_tokens", 0)
+                    if trace:
+                        trace.registrar_tokens(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
 
     def on_tool_end(self, output, **kwargs):
         self.chamadas_mcp += 1
@@ -191,27 +198,36 @@ workflow.add_edge("redator", END)
 grafo_coordenador = workflow.compile()
 
 
-def executar_coordenador(pergunta: str, role: str = "geral", exibir_metricas: bool = True) -> str:
+def executar_coordenador(pergunta: str, role: str = "geral", exibir_metricas: bool = True, run_id: Optional[str] = None) -> str:
     """Executa o fluxo completo do Coordenador de ponta a ponta com LLM e MCP reais.
     
     Rastreia e exibe as métricas de chamadas à API e consumo de tokens.
     Retorna a resposta textual final gerada pelo nó redator.
     """
-    monitor = MonitorAPI()
-    estado_inicial: EstadoCoordenador = {
-        "role": role,
-        "messages": [HumanMessage(content=pergunta)],
-        "proximo_passo": "",
-        "query_atual": "",
-    }
-    
-    resultado = grafo_coordenador.invoke(estado_inicial, config={"callbacks": [monitor]})
-    
-    if exibir_metricas:
-        print(monitor.relatorio())
-        
-    ultima_mensagem = resultado["messages"][-1]
-    return _extrair_texto(ultima_mensagem)
+    trace = obter_trace_atual()
+    gerenciador = None
+    if not trace:
+        gerenciador = iniciar_rastreamento(padrao="coordenador", pergunta=pergunta, papel=role, run_id=run_id)
+        trace = gerenciador.__enter__()
+
+    try:
+        monitor = MonitorAPI()
+        estado_inicial: EstadoCoordenador = {
+            "role": role,
+            "messages": [HumanMessage(content=pergunta)],
+            "proximo_passo": "",
+            "query_atual": "",
+        }
+        resultado = grafo_coordenador.invoke(estado_inicial, config={"callbacks": [monitor]})
+        if exibir_metricas:
+            print(monitor.relatorio())
+        texto = _extrair_texto(resultado["messages"][-1])
+        if trace:
+            trace.definir_resposta(texto)
+        return texto
+    finally:
+        if gerenciador is not None:
+            gerenciador.__exit__(*sys.exc_info())
 
 
 if __name__ == "__main__":

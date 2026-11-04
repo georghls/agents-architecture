@@ -1,6 +1,7 @@
 import operator
 import os
-from typing import Annotated, TypedDict
+import sys
+from typing import Annotated, TypedDict, Optional
 from pydantic import BaseModel, Field
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -11,6 +12,7 @@ from langgraph.types import Send
 from src.agentes.coordenador import MonitorAPI, _extrair_texto
 from src.agentes.mcp_toolkit import criar_ferramenta_busca
 from src.config import chave_gemini
+from src.observabilidade.telemetria import obter_trace_atual, iniciar_rastreamento
 
 
 # 1. MODELOS DE DADOS E CONTRATOS DO PLANO
@@ -187,23 +189,41 @@ workflow.add_edge("sintetizador", END)
 grafo_plano_executor = workflow.compile()
 
 
-def executar_plano_executor(pergunta: str, role: str = "geral", exibir_metricas: bool = True) -> str:
+def executar_plano_executor(
+    pergunta: str,
+    role: str = "geral",
+    exibir_metricas: bool = True,
+    run_id: Optional[str] = None,
+) -> str:
     """Executa o agente Plano-Executor de ponta a ponta com rastreamento de métricas."""
-    monitor = MonitorAPI()
-    estado_inicial: EstadoPlanoExecutor = {
-        "role": role,
-        "pergunta": pergunta,
-        "plano": [],
-        "resultados": [],
-        "resposta_final": "",
-    }
+    trace = obter_trace_atual()
+    gerenciador = None
+    if not trace:
+        gerenciador = iniciar_rastreamento(padrao="plano_executor", pergunta=pergunta, papel=role, run_id=run_id)
+        trace = gerenciador.__enter__()
 
-    resultado = grafo_plano_executor.invoke(estado_inicial, config={"callbacks": [monitor]})
+    try:
+        monitor = MonitorAPI()
+        estado_inicial: EstadoPlanoExecutor = {
+            "role": role,
+            "pergunta": pergunta,
+            "plano": [],
+            "resultados": [],
+            "resposta_final": "",
+        }
 
-    if exibir_metricas:
-        print(monitor.relatorio())
+        resultado = grafo_plano_executor.invoke(estado_inicial, config={"callbacks": [monitor]})
 
-    return resultado["resposta_final"]
+        if exibir_metricas:
+            print(monitor.relatorio())
+
+        resp_final = resultado["resposta_final"]
+        if trace:
+            trace.definir_resposta(resp_final)
+        return resp_final
+    finally:
+        if gerenciador is not None:
+            gerenciador.__exit__(*sys.exc_info())
 
 
 if __name__ == "__main__":
