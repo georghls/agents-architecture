@@ -303,6 +303,26 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Consequências e riscos: A submissão de uma pergunta leva mais tempo total para concluir (soma do tempo dos três agentes), mas entrega a matriz analítica completa instantaneamente para o pesquisador.
 - Como verificar: Executar uma pergunta no app Streamlit com papel `geral` e `diretoria` e verificar a renderização simultânea das 3 respostas e dos gráficos comparativos da rodada.
 
+### D-022 — Pipeline de Ingestão de Documentos Estruturados com Chunking Semântico e MCP Top-K (2026-11-04)
+
+- Status: aceito
+- Contexto: O corpus sintético inicial de 9 frases curtas foi suficiente para validar o isolamento RBAC da Fase 2 e os nós de orquestração da Fase 3, mas não permitia exercitar raciocínio multi-hop, síntese de seções complexas ou a degradação de contexto em documentos corporativos longos (manuais de conduta, políticas de reembolso de viagens e planos de M&A). Indexar documentos extensos inteiros sem particionamento degrada a precisão semântica dos embeddings, e o servidor MCP limitado a `LIMIT 1` impedia o agente de sintetizar respostas cujas evidências estivessem distribuídas em diferentes tópicos de um documento.
+- Decisão:
+  1. Estruturar o diretório `data/documentos/` segregado por perfis de acesso (`geral/`, `rh/`, `diretoria/`), contendo documentos sintéticos ricos em formato Markdown com seções (`#`, `##`) e tabelas.
+  2. Implementar particionador semântico recursivo (`segmentar_documento`) em Python nativo dentro de `src/ingestao/ingestao.py`, dividindo o texto em chunks de até 700 caracteres orientados por cabeçalhos e parágrafos, prefixando o título do documento pai a cada trecho para garantir ancoragem contextual.
+  3. Cada chunk herda a governança de acesso nos metadados JSONB (`papel`, `documento`, `chunk_id`, `total_chunks`), garantindo compatibilidade nativa com o filtro SQL do pgvector.
+  4. Garantir idempotência estrita no pipeline: tanto as 9 frases fundamentais do Golden Dataset quanto os chunks dos arquivos são verificados por existência antes da inserção, preservando 100% de retrocompatibilidade com os testes anteriores.
+  5. Atualizar `src/mcp/server.py` para retornar até `top_k=3` trechos autorizados mais relevantes abaixo da nota de corte (`LIMIAR_DISTANCIA = 0.60`), formatados com citação de origem (`[1] (Origem: ...)`), viabilizando consultas ricas e multi-hop nos agentes.
+- Alternativas consideradas:
+  - Inserir documentos inteiros sem chunking: descartado por diluição semântica do vetor de 3072 dimensões e perda de granularidade em perguntas específicas.
+  - Depender de `langchain_text_splitters`: descartado para manter zero dependências extras e compatibilidade com o ambiente Python nativo no Windows.
+  - Manter `LIMIT 1` fixo no MCP: descartado por forçar o agente a trabalhar com visão parcial e incompleta de documentos estruturados.
+- Consequências e riscos: Aumenta a base vetorial no Supabase de 9 para 24 registros indexados. Os agentes passam a receber evidências mais detalhadas, aumentando levemente o volume de tokens de contexto em troca de respostas significativamente mais completas e fundamentadas.
+- Como verificar:
+  - Execução de `python -m src.ingestao.ingestao` indexando os arquivos sem erros.
+  - Execução dos testes automatizados (`pytest -v`) validando retrocompatibilidade.
+  - Consulta via cliente MCP (`python scripts/cliente.py`) e visualização na Arena Streamlit (`streamlit run src/ui/app.py`).
+
 ## Modelo para novas entradas
 
 ```md

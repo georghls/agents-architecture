@@ -12,6 +12,7 @@ MENSAGEM_SEM_RESULTADO = "Nenhum documento encontrado nos registros autorizados 
 MENSAGEM_ERRO_AUTH = "Erro MCP: Sessão não autenticada ou token de identidade inválido. Acesso negado."
 MENSAGEM_ERRO_SISTEMA = "Erro interno no servidor de documentos: falha temporária de infraestrutura."
 LIMIAR_DISTANCIA = 0.60  # Nota de corte: distância máxima aceitável para considerar um documento relevante
+TOP_K_PADRAO = 3  # Número máximo de trechos relevantes retornados (D-022)
 
 # 1. Inicializa o Servidor MCP com um nome amigável
 mcp = MCPServer("ServidorDeDocumentos")
@@ -28,13 +29,14 @@ def obter_papel_da_sessao() -> str:
         raise PermissionError(str(erro)) from erro
 
 
-def buscar_no_banco(pergunta: str, papel_do_usuario: str | None = None) -> str:
+def buscar_no_banco(pergunta: str, papel_do_usuario: str | None = None, top_k: int = TOP_K_PADRAO) -> str:
     """Busca com isolamento rígido de perfil e nota de corte de relevância no SQL.
     
     1. O usuário só consulta documentos aos quais tem permissão (filtro de perfil no SQL).
        O papel é obtido a partir da identidade confiável da sessão (JWT) e nunca de alegação arbitrária.
     2. Documentos permitidos só são retornados se atingirem a nota de corte (distância <= LIMIAR_DISTANCIA).
-    3. Se não houver documento relevante autorizado, retorna mensagem neutra e segura,
+    3. Se houver múltiplos trechos relevantes (D-022), retorna os top_k trechos concatenados com metadados de origem.
+    4. Se não houver documento relevante autorizado, retorna mensagem neutra e segura,
        evitando tanto falsos positivos quanto vazamento de existência do segredo (oráculo).
     """
     if papel_do_usuario is None:
@@ -51,27 +53,37 @@ def buscar_no_banco(pergunta: str, papel_do_usuario: str | None = None) -> str:
         sql_busca = """
         SELECT 
             conteudo, 
+            metadados->>'documento' AS doc_origem,
             (embedding <=> %s::vector) AS distancia
         FROM documentos 
         WHERE metadados->>'papel' IN ('geral', %s)
           AND (embedding <=> %s::vector) <= %s
         ORDER BY distancia ASC
-        LIMIT 1;
+        LIMIT %s;
         """
         
         with psycopg.connect(url_banco()) as conexao:
             with conexao.cursor() as cursor:
                 cursor.execute(
                     sql_busca, 
-                    (str(vetor_pergunta), papel_usuario_normalizado, str(vetor_pergunta), LIMIAR_DISTANCIA)
+                    (str(vetor_pergunta), papel_usuario_normalizado, str(vetor_pergunta), LIMIAR_DISTANCIA, top_k)
                 )
-                resultado = cursor.fetchone()
+                resultados = cursor.fetchall()
                 
-                if not resultado:
+                if not resultados:
                     return MENSAGEM_SEM_RESULTADO
                 
-                conteudo, distancia = resultado
-                return f"Documento encontrado: {conteudo}"
+                if len(resultados) == 1:
+                    conteudo, doc_origem, distancia = resultados[0]
+                    origem_str = f" [{doc_origem}]" if doc_origem else ""
+                    return f"Documento encontrado{origem_str}: {conteudo}"
+                
+                trechos = []
+                for i, (conteudo, doc_origem, distancia) in enumerate(resultados, 1):
+                    origem_str = f" (Origem: {doc_origem})" if doc_origem else ""
+                    trechos.append(f"[{i}]{origem_str}\n{conteudo}")
+                
+                return f"Documentos encontrados ({len(resultados)} trechos autorizados):\n\n" + "\n\n".join(trechos)
     except Exception as erro:
         print(f"[Servidor MCP] Erro de infraestrutura ao buscar no banco: {erro}", file=sys.stderr)
         return MENSAGEM_ERRO_SISTEMA
