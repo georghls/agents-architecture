@@ -8,8 +8,9 @@ if str(RAIZ) not in sys.path:
 import psycopg
 from src.config import url_banco
 
+
 def criar_tabelas():
-    # Este é o comando SQL que desenha a estrutura da nossa tabela
+    # Este é o comando SQL que desenha a estrutura da nossa tabela e políticas RLS (D-023)
     sql_criar_tabela = """
     CREATE TABLE IF NOT EXISTS documentos (
         id SERIAL PRIMARY KEY,
@@ -23,8 +24,24 @@ def criar_tabelas():
         embedding vector(3072)
     );
 
-    -- Ativa o Row Level Security (RLS) para corrigir o aviso de segurança no Supabase
+    -- Ativa e força o Row Level Security (RLS) com políticas explícitas de defesa em profundidade (D-023)
     ALTER TABLE documentos ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE documentos FORCE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS politica_leitura_rbac ON documentos;
+    CREATE POLICY politica_leitura_rbac ON documentos
+        FOR SELECT
+        USING (
+            metadados->>'papel' = 'geral'
+            OR metadados->>'papel' = COALESCE(NULLIF(current_setting('app.current_role', true), ''), current_user)
+            OR current_user = 'postgres'
+        );
+
+    DROP POLICY IF EXISTS politica_ingestao_admin ON documentos;
+    CREATE POLICY politica_ingestao_admin ON documentos
+        FOR ALL
+        USING (current_user = 'postgres')
+        WITH CHECK (current_user = 'postgres');
     """
     
     try:
@@ -37,11 +54,10 @@ def criar_tabelas():
                 
                 # Salva as alterações definitivamente
                 conexao.commit()
-                print("Tabela 'documentos' criada e pronta para uso!")
+                print("Tabela 'documentos' e políticas RLS criadas e prontas para uso!")
                 
     except Exception as e:
         print(f"Ocorreu um erro ao criar a tabela: {e}")
 
 if __name__ == "__main__":
     criar_tabelas()
-

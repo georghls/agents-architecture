@@ -74,13 +74,15 @@ def calcular_custo_execucao(
     output_tokens: int,
     modelo: str = "gemini-flash-lite-latest",
     taxa_cambio_usd_brl: float = TAXA_CAMBIO_USD_BRL_PADRAO,
+    chamadas_embedding: int = 0,
 ) -> EstimativaCusto:
-    """Calcula o custo financeiro exato de uma execução com base no consumo de tokens.
+    """Calcula o custo financeiro exato de uma execução com base no consumo de tokens e embeddings.
 
     Se o modelo exato não estiver cadastrado, utiliza a tabela do Flash Lite como fallback.
     """
     input_tokens = max(0, int(input_tokens))
     output_tokens = max(0, int(output_tokens))
+    chamadas_embedding = max(0, int(chamadas_embedding))
     total_tokens = input_tokens + output_tokens
 
     # Normaliza nome de modelo (ex: 'models/gemini-flash-lite-latest' -> 'gemini-flash-lite-latest')
@@ -99,7 +101,10 @@ def calcular_custo_execucao(
 
     custo_input_usd = (input_tokens / 1_000_000.0) * tabela["preco_input_1m_usd"]
     custo_output_usd = (output_tokens / 1_000_000.0) * tabela["preco_output_1m_usd"]
-    custo_total_usd = custo_input_usd + custo_output_usd
+    # Cada chamada de embedding (~50 tokens médios) a $0.02 / 1M tokens (D-024)
+    preco_emb_1m = TABELA_PRECOS_GEMINI["models/gemini-embedding-2"]["preco_input_1m_usd"]
+    custo_embedding_usd = (chamadas_embedding * 50.0 / 1_000_000.0) * preco_emb_1m
+    custo_total_usd = custo_input_usd + custo_output_usd + custo_embedding_usd
     custo_total_brl = custo_total_usd * taxa_cambio_usd_brl
 
     return {

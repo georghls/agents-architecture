@@ -323,6 +323,65 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
   - Execução dos testes automatizados (`pytest -v`) validando retrocompatibilidade.
   - Consulta via cliente MCP (`python scripts/cliente.py`) e visualização na Arena Streamlit (`streamlit run src/ui/app.py`).
 
+### D-023 — Endurecimento de Segurança (Security Hardening): Isolamento contra Indirect Prompt Injection, Gestão Criptográfica JWT, Whitelist RBAC e Políticas RLS (2026-11-04)
+
+- Status: aceito
+- Contexto: Uma auditoria especializada de Engenharia de IA identificou pontos de vulnerabilidade residual na defesa em profundidade:
+  1. O nó pesquisador do Coordenador empacotava os trechos recuperados do MCP em uma `SystemMessage`, conferindo a dados externos não confiáveis a mesma precedência hierárquica das instruções de sistema (vetor para *Indirect Prompt Injection*).
+  2. `src/config.py` possuía um fallback estático e público para `AUTH_SECRET_KEY`, permitindo adivinhação de chave caso o `.env` não definisse o segredo.
+  3. `src/autorizacao/tokens.py` não restringia os papéis a uma whitelist explícita (`geral`, `rh`, `diretoria`) nem validava o tamanho mínimo de 256 bits (32 caracteres) da chave HMAC conforme a RFC 7518.
+  4. `buscar_no_banco` em `src/mcp/server.py` aceitava um argumento opcional `papel_do_usuario`, permitindo bypass da leitura do token JWT em chamadas diretas.
+  5. `src/persistencia/setup_tabelas.py` habilitava Row Level Security (`ENABLE ROW LEVEL SECURITY`) sem políticas declaradas (`CREATE POLICY`), e a verificação de vazamento na Arena Streamlit checava apenas um termo isolado e omitia o perfil `rh`.
+- Decisão:
+  1. **Separação Estrita Dados vs. Instruções (Mitigação de Indirect Prompt Injection):** Substituir `SystemMessage` por `HumanMessage` com delimitadores XML `<evidencia_mcp>...</evidencia_mcp>` no `pesquisador_node` (`src/agentes/coordenador.py`) e também em `src/agentes/plano_executor.py` e `src/agentes/conversa_grupo.py`, instruindo explicitamente os nós sintetizadores/redatores a tratar todo o interior de `<evidencia_mcp>` como dado passivo não confiável e nunca obedecer a comandos ali embutidos.
+  2. **Eliminação de Chave Estática Previsível e Conformidade RFC 7518:** Remover a chave estática hardcoded de `src/config.py`. Se `AUTH_SECRET_KEY` não estiver definida no ambiente/`.env`, gerar uma chave efêmera criptograficamente segura via CSPRNG (`secrets.token_hex(32)`) por execução (ou falhar fechado quando `STRICT_AUTH=1`), exigindo sempre comprimento mínimo de 32 caracteres (256 bits) tanto em `src/config.py` quanto em `src/autorizacao/tokens.py`.
+  3. **Whitelist Estrita de Papéis RBAC e Falha Fechada no Servidor MCP:** Restringir emissão e validação de JWT exclusivamente a `PAPEIS_PERMITIDOS = {"geral", "rh", "diretoria"}` e exigir as claims `sub`, `papel`, `iat` e `exp`. Remover o parâmetro de bypass `papel_do_usuario` de `buscar_no_banco` em `src/mcp/server.py`, obrigando 100% das consultas a extrair a identidade do token JWT validado (`obter_papel_da_sessao()`).
+  4. **Políticas RLS Explícitas no PostgreSQL:** Adicionar políticas `CREATE POLICY` em `src/persistencia/setup_tabelas.py` baseadas em `metadados->>'papel'` e na variável de sessão `app.current_role`.
+  5. **Auditoria RBAC Completa por Perfil:** Adicionar um mapa completo de segredos proibidos por papel (`obter_termos_proibidos_por_papel`) em `src/observabilidade/avaliador.py` e habilitar os três perfis (`geral`, `rh`, `diretoria`) na Arena Streamlit (`src/ui/app.py`).
+- Alternativas consideradas:
+  - Manter `SystemMessage` com apenas avisos textuais: descartado porque modelos de linguagem priorizam instruções em `SystemMessage` sobre regras anteriores.
+  - Exigir configuração manual de `AUTH_SECRET_KEY` até mesmo em testes unitários offline: descartado em favor de geração CSPRNG efêmera em memória (gravada no `os.environ` do processo para propagação ao subprocesso MCP), que garante zero chave previsível sem quebrar o CI.
+- Consequências e riscos: Fecha as superfícies de ataque de injeção indireta, falsificação de JWT, escalação de privilégio por papel arbitrário e bypass de função interna.
+- Como verificar: Execução de `python -m pytest tests/resiliencia/ tests/test_mcp_toolkit.py -v` cobrindo injeção indireta no grafo real com dublê, rejeição de chaves curtas (< 32 chars), rejeição de papéis fora da whitelist, ausência de bypass em `buscar_no_banco` e validação completa de termos proibidos por perfil.
+
+### D-024 — Correção de Distorções Experimentais: Assimetria de Embeddings (`retrieval_query`), Rastreamento de Contexto MCP no Juiz LLM, Sessão MCP Compartilhada no Plano–Executor e Instrumentação Granular de Spans (2026-11-06)
+
+- Status: aceito
+- Contexto: A revisão arquitetural identificou distorções metodológicas e funcionais que afetavam a validade empírica da comparação entre os três padrões multiagentes:
+  1. `src/busca/embeddings.py` fixava `task_type="retrieval_document"` inclusive para perguntas dos usuários (deveria ser `retrieval_query` na busca) e utilizava o pacote depreciado `google.generativeai`.
+  2. O pipeline de benchmark (`scripts/executar_benchmark.py`) e a Arena Streamlit (`src/ui/app.py`) invocavam `avaliar_execucao` sem repassar o `contexto_mcp` recuperado, fazendo o Juiz LLM avaliar as respostas como se nenhum documento tivesse sido retornado.
+  3. No padrão Plano–Executor (`src/agentes/plano_executor.py`), as 3 subtarefas paralelas abriam 3 subprocessos Python independentes (`python -m src.mcp.server`) a cada pergunta em vez de compartilhar o mesmo servidor MCP conforme `D-001`, inflando artificialmente a latência por overhead de *cold boot* de processos no Windows.
+  4. `src/agentes/coordenador.py` e `src/agentes/plano_executor.py` instanciavam `ChatGoogleGenerativeAI` no escopo global de importação (exigindo `GEMINI_API_KEY` mesmo em testes offline), não registravam spans individuais por nó no `TraceContexto` e não contabilizavam o custo de embeddings no FinOps.
+  5. Na Conversação em Grupo (`src/agentes/conversa_grupo.py`), `max_mensagens=6` interrompia a conversa antes que o `analyst_agent` pudesse revisar a resposta caso o `validator_agent` solicitasse correção no 1º ciclo.
+- Decisão:
+  1. **Embeddings Assimétricos e Migração para `google-genai`:** Atualizar `get_embedding(text, task_type="retrieval_document")` em `src/busca/embeddings.py` para usar o SDK oficial `google.genai` (`types.EmbedContentConfig(task_type=...)`), passando `task_type="retrieval_query"` nas consultas de `src/mcp/server.py` e `src/busca/recuperacao.py`.
+  2. **Propagação Automática de `contexto_mcp` para o Avaliador:** Registrar os trechos retornados pelo MCP diretamente no `TraceContexto` (`registrar_evidencia_mcp` / `obter_evidencias_execucao` em `src/observabilidade/telemetria.py`) durante a execução de `consultar_mcp_async`, e repassá-los ao `avaliar_execucao` no benchmark e na Arena Streamlit.
+  3. **Sessão MCP Compartilhada por Execução (D-001):** Implementar o gerenciador `sessao_mcp_compartilhada(role)` em `src/agentes/mcp_toolkit.py`, mantendo um único processo `src.mcp.server` aquecido durante o Fan-Out das subtarefas do `executar_plano_executor` (com serialização thread-safe no canal stdio), eliminando múltiplos *cold boots* por pergunta.
+  4. **Inicialização Lazy de LLM e Spans por Nó/Agente:** Substituir a instanciação ansiosa no topo de `coordenador.py` e `plano_executor.py` por inicialização *lazy* (`obter_llm()`), instrumentar cada nó dos grafos e turnos do AutoGen com `trace.span(..., tipo="node")`, contabilizar o custo de embeddings em `calcular_custo_execucao` e ampliar `max_mensagens` padrão para `9` em `conversa_grupo.py`.
+  5. **Metadados de Citação e Estado `published`:** Completar os metadados (`documento`, `chunk_id`, `versao`, `status: "published"`) nos documentos base de `src/ingestao/ingestao.py` e filtrar `COALESCE(metadados->>'status', 'published') = 'published'` na query SQL de `src/mcp/server.py`.
+- Alternativas consideradas:
+  - Manter subprocesso MCP efêmero por subtarefa no Plano–Executor: descartado por violar `D-001` e distorcer a métrica de latência do padrão.
+- Consequências e riscos: Elimina o `FutureWarning` do SDK depreciado, torna o julgamento LLM-as-a-Judge 100% fundamentado nas evidências reais do MCP, reduz drasticamente o overhead de processo no Plano–Executor e popula a árvore completa de spans na aba Auditoria do Dashboard.
+- Como verificar: Executar a suíte completa de testes (`python -m pytest -m "not llm" -v`).
+
+### D-025 — Evolução Arquitetural: Validação/Replanejamento nos Grafos, Auditoria de Consenso no AutoGen e Contrato Completo de Citação e Revogação (2026-11-06)
+
+- Status: aceito
+- Contexto: Para alinhar 100% da implementação aos requisitos arquiteturais de `docs/architecture.md`, `docs/multi-agent.md`, `docs/fase-2.md` e aos diagramas da Fase 1 (`docs/diagramas/`):
+  1. No Coordenador (`coordenador.mmd` e `docs/multi-agent.md`), faltava o nó explícito de **Validação de Evidências** (`validador_node`) ao término da síntese para garantir que a resposta final não vazasse termos proibidos do perfil nem violasse o estado de falha fechada.
+  2. No Plano–Executor (`docs/multi-agent.md`), faltava uma borda condicional de **Avaliação e Replanejamento Limitado** após a execução das subtarefas para reexecutar buscas que tenham sofrido falha transitória de transporte com limite estrito (`MAX_REPLANEJAMENTOS = 1`) contra loops infinitos.
+  3. Na Conversação em Grupo (`src/agentes/conversa_grupo.py`), `_extrair_resposta_final` precisava verificar se um parecer do `analyst_agent` havia sido reprovado pelo `validator_agent` subjacente sem revisão posterior, registrando também spans por agente e métricas de consenso (`aprovado_pelo_validador`, `ciclos_revisao`).
+  4. No Servidor MCP (`src/mcp/server.py`) e na Ingestão (`src/ingestao/ingestao.py`), faltava incluir `versao` e `chunk_id` na referência citável retornada pelo MCP (`[documento | versao | chunk N]`), atualizar metadados legados no banco de forma idempotente e expor a operação administrativa `revogar_documento(...)`.
+- Decisão:
+  1. **Nó Validador no Coordenador (`validador_node`):** Adicionar o nó `validador` após `redator` em `src/agentes/coordenador.py`, verificando conformidade RBAC (`verificar_seguranca_rbac`) e sanitizando/bloqueando respostas que violem o isolamento do perfil.
+  2. **Avaliação e Replanejamento Controlado no Plano–Executor:** Adicionar `avaliador_execucao_node` e a borda condicional `rotear_apos_avaliacao` em `src/agentes/plano_executor.py`, permitindo até 1 tentativa de recuperação (`MAX_REPLANEJAMENTOS = 1`) caso subtarefas falhem por erro transitório de MCP, antes de consolidar no `sintetizador_node`.
+  3. **Auditoria de Consenso e Spans por Turno na Conversação em Grupo:** Atualizar `_extrair_resposta_final` e adicionar `_auditar_consenso_validador` em `src/agentes/conversa_grupo.py`, priorizando respostas aprovadas pelo `validator_agent` (ou corrigidas pelo validador se o limite de turnos interromper uma revisão pendente) e registrando spans individuais para cada turno de agente.
+  4. **Contrato Completo de Citação e Revogação Documental:** Atualizar `buscar_no_banco` em `src/mcp/server.py` para retornar citações estruturadas (`[documento | versao | chunk N]`), atualizar metadados incompletos no `popular_banco()` e implementar `revogar_documento(documento, versao)` em `src/ingestao/ingestao.py`.
+- Alternativas consideradas:
+  - Replanejamento ilimitado com chamadas extras de LLM: descartado pelo risco de loops e esgotamento de cota HTTP 429.
+- Consequências e riscos: Os três padrões passam a refletir integralmente a literatura de Engenharia de IA e os diagramas da Fase 1, sem adicionar chamadas extras de LLM no caminho feliz.
+- Como verificar: Executar `python -m pytest -m "not llm" -v` validando os novos testes de citação estruturada, revogação documental, replanejamento limitado, nó validador do coordenador e auditoria de consenso no AutoGen.
+
 ## Modelo para novas entradas
 
 ```md

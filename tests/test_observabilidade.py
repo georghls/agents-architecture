@@ -24,6 +24,7 @@ from src.observabilidade.telemetria import (
     obter_trace_atual,
     listar_execucoes,
     obter_resumo_estatistico,
+    obter_evidencias_execucao,
 )
 
 
@@ -143,3 +144,130 @@ def test_consultas_analiticas_dashboard(tmp_path: Path):
     assert resumo["coordenador"]["total_execucoes"] == 2
     assert resumo["plano_executor"]["total_execucoes"] == 1
     assert resumo["coordenador"]["tokens_medios"] == pytest.approx(225.0)  # (150 + 300) / 2
+
+
+def test_rastreamento_e_recuperacao_evidencias_mcp(tmp_path: Path):
+    """Garante que o contexto MCP registrado no trace é persistido e recuperado para o Juiz LLM (D-024)."""
+    caminho_db = tmp_path / "evidencias_teste.db"
+
+    with iniciar_rastreamento("coordenador", "Qual o cardápio?", "geral", "run_ev_01", caminho_db) as t:
+        t.registrar_evidencia_mcp("Documento encontrado: Cardápio de segunda tem feijoada.")
+        t.definir_resposta("Temos feijoada na segunda.")
+
+    evidencia_recuperada = obter_evidencias_execucao("run_ev_01", caminho_banco=caminho_db)
+    assert "Cardápio de segunda tem feijoada" in evidencia_recuperada
+
+
+def test_custo_contabiliza_chamadas_embedding():
+    """Garante que chamadas de embedding somam ao custo total quando informadas (D-024)."""
+    sem_emb = calcular_custo_execucao(1000, 500, chamadas_embedding=0)
+    com_emb = calcular_custo_execucao(1000, 500, chamadas_embedding=3)
+    assert com_emb["custo_total_usd"] > sem_emb["custo_total_usd"]
+
+
+def test_get_embedding_respeita_task_type_assimetrico(monkeypatch):
+    """Verifica que get_embedding repassa task_type ('retrieval_query' vs 'retrieval_document') ao SDK google-genai (D-024)."""
+    from src.busca import embeddings
+
+    configs_recebidos = []
+
+    class _FakeEmbedding:
+        values = [0.25] * 3072
+
+    class _FakeResult:
+        embeddings = [_FakeEmbedding()]
+
+    class _FakeModels:
+        def embed_content(self, *, model, contents, config):
+            configs_recebidos.append((model, contents, config.task_type))
+            return _FakeResult()
+
+    class _FakeClient:
+        models = _FakeModels()
+
+    monkeypatch.setattr(embeddings, "_obter_cliente", lambda: _FakeClient())
+
+    vetor_q = embeddings.get_embedding("Qual o orçamento?", task_type="retrieval_query")
+    vetor_d = embeddings.get_embedding("Texto do documento", task_type="retrieval_document")
+
+    assert len(vetor_q) == 3072
+    assert len(vetor_d) == 3072
+    assert configs_recebidos[0] == ("models/gemini-embedding-2", "Qual o orçamento?", "retrieval_query")
+    assert configs_recebidos[1] == ("models/gemini-embedding-2", "Texto do documento", "retrieval_document")
+
+
+def test_coordenador_validador_node_bloqueia_vazamento():
+    """Garante que o validador_node do Coordenador retém qualquer segredo proibido para o perfil (D-025)."""
+    from langchain_core.messages import AIMessage, HumanMessage
+    from src.agentes.coordenador import validador_node
+
+    estado_vazado = {
+        "role": "geral",
+        "messages": [
+            HumanMessage(content="Qual o orçamento?"),
+            AIMessage(content="O orçamento do Projeto Secreto é de 50 milhões."),
+        ],
+        "proximo_passo": "redator",
+        "query_atual": "",
+    }
+    atualizacao = validador_node(estado_vazado)
+    assert "messages" in atualizacao
+    nova_msg = atualizacao["messages"][-1].content
+    assert "50 milhões" not in nova_msg
+    assert "não constam" in nova_msg.lower()
+
+
+def test_plano_executor_replanejamento_limitado_em_falha_transitoria():
+    """Garante que avaliador_execucao_node e rotear_apos_avaliacao fazem no máximo 1 retry em falha MCP (D-025)."""
+    from langgraph.types import Send
+    from src.agentes.plano_executor import avaliador_execucao_node, rotear_apos_avaliacao
+
+    estado_falha_1 = {
+        "role": "geral",
+        "pergunta": "Qual o cardápio?",
+        "plano": [{"id": 1, "descricao": "Cardápio", "query_busca": "cardápio"}],
+        "resultados": [
+            {
+                "id_tarefa": 1,
+                "descricao": "Cardápio",
+                "query_busca": "cardápio",
+                "resultado_mcp": "Erro MCP: não foi possível consultar o servidor de documentos.",
+            }
+        ],
+        "tentativas_replanejamento": 0,
+    }
+
+    delta = avaliador_execucao_node(estado_falha_1)
+    assert delta["tentativas_replanejamento"] == 1
+
+    estado_apos_avaliacao = {**estado_falha_1, **delta}
+    rota = rotear_apos_avaliacao(estado_apos_avaliacao)
+    assert isinstance(rota, list)
+    assert len(rota) == 1
+    assert isinstance(rota[0], Send)
+    assert rota[0].node == "executor"
+
+    # Na 2ª vez (após o limite MAX_REPLANEJAMENTOS = 1), encerra indo para 'sintetizador' sem loop infinito
+    estado_apos_retry = {
+        **estado_apos_avaliacao,
+        "resultados": estado_falha_1["resultados"] * 2,
+    }
+    rota_final = rotear_apos_avaliacao(estado_apos_retry)
+    assert rota_final == "sintetizador"
+
+
+def test_citacao_estruturada_e_revogacao_documento(monkeypatch):
+    """Valida formatação de citação completa (documento | versao | chunk) e função revogar_documento (D-025)."""
+    from src.mcp.server import _formatar_citacao
+    from src.ingestao import ingestao
+
+    citacao_curta = _formatar_citacao("manual.md", "v1", 2, formato_curto=True)
+    assert citacao_curta == " [manual.md | v1 | chunk 2]"
+
+    citacao_longa = _formatar_citacao("manual.md", "v2", 1, formato_curto=False)
+    assert citacao_longa == " (Origem: manual.md | v2 | chunk 1)"
+
+    with pytest.raises(ValueError):
+        ingestao.revogar_documento("   ")
+
+

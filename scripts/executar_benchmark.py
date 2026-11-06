@@ -32,6 +32,7 @@ from src.observabilidade.telemetria import (
     obter_resumo_estatistico,
     obter_metricas_qualidade,
     iniciar_rastreamento,
+    obter_evidencias_execucao,
 )
 from src.observabilidade.avaliador import avaliar_execucao
 
@@ -196,18 +197,20 @@ def main():
                     resultado_grupo = executar_conversa_grupo(
                         pergunta=pergunta,
                         papel=papel,
-                        max_mensagens=6,
+                        max_mensagens=9,
                         run_id=run_id,
                     )
                     resposta = resultado_grupo.get("resposta_final", "")
 
                 duracao = time.perf_counter() - t0
+                contexto_mcp = obter_evidencias_execucao(run_id, caminho_banco=args.banco)
 
-                # Avalia qualidade e RBAC
+                # Avalia qualidade e RBAC (com o contexto_mcp real recuperado - D-024)
                 eval_res = avaliar_execucao(
                     run_id=run_id,
                     pergunta=pergunta,
                     resposta=resposta,
+                    contexto_mcp=contexto_mcp,
                     papel_usuario=papel,
                     termos_proibidos=item.get("resposta_esperada_nao_contem"),
                     termos_obrigatorios=item.get("resposta_esperada_contem"),

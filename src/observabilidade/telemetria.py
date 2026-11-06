@@ -179,6 +179,7 @@ class TraceContexto:
         self.sucesso: bool = True
         self.erro: Optional[str] = None
         self.metadados: dict[str, Any] = {}
+        self.evidencias_mcp: list[str] = []
 
         self.spans: list[dict[str, Any]] = []
         self._t0: float = 0.0
@@ -236,6 +237,16 @@ class TraceContexto:
     def registrar_chamada_mcp(self, quantidade: int = 1):
         self.chamadas_mcp += quantidade
 
+    def registrar_evidencia_mcp(self, evidencia: str):
+        """Armazena o trecho/evidência retornado pelo servidor MCP para auditoria do Juiz LLM (D-024)."""
+        if isinstance(evidencia, str) and evidencia.strip():
+            self.evidencias_mcp.append(evidencia.strip())
+            self.metadados["evidencias_mcp"] = list(self.evidencias_mcp)
+
+    def obter_contexto_mcp(self) -> str:
+        """Retorna todas as evidências coletadas no MCP concatenadas."""
+        return "\n\n".join(self.evidencias_mcp)
+
     def definir_resposta(self, resposta: str):
         self.resposta_final = resposta
 
@@ -243,10 +254,11 @@ class TraceContexto:
         """Salva a execução e todos os seus spans no banco SQLite local."""
         banco = inicializar_banco(self.caminho_banco)
 
-        # Calcula o custo financeiro
+        # Calcula o custo financeiro (incluindo chamadas de embedding do MCP - D-024)
         estimativa = calcular_custo_execucao(
             input_tokens=self.input_tokens,
             output_tokens=self.output_tokens,
+            chamadas_embedding=self.chamadas_mcp,
         )
 
         with sqlite3.connect(banco) as conn:
@@ -357,6 +369,41 @@ def listar_execucoes(limite: int = 100, caminho_banco: Optional[Path | str] = No
             (limite,),
         )
         return [dict(linha) for linha in cursor.fetchall()]
+
+
+def obter_evidencias_execucao(run_id: str, caminho_banco: Optional[Path | str] = None) -> str:
+    """Recupera o contexto documental retornado pelo MCP durante um `run_id` específico (D-024)."""
+    banco = obter_caminho_banco(caminho_banco)
+    if not banco.exists() or not run_id:
+        return ""
+
+    with sqlite3.connect(banco) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT metadados FROM execucoes WHERE run_id = ?", (run_id,))
+        linha = cursor.fetchone()
+        if linha and linha["metadados"]:
+            try:
+                meta = json.loads(linha["metadados"])
+                evidencias = meta.get("evidencias_mcp", [])
+                if isinstance(evidencias, list) and evidencias:
+                    return "\n\n".join(str(e) for e in evidencias if e)
+            except Exception:
+                pass
+
+        cursor.execute(
+            "SELECT detalhes FROM spans WHERE run_id = ? AND tipo = 'tool_mcp' ORDER BY timestamp_inicio ASC",
+            (run_id,),
+        )
+        partes = []
+        for s in cursor.fetchall():
+            try:
+                det = json.loads(s["detalhes"] or "{}")
+                if det.get("evidencia"):
+                    partes.append(str(det["evidencia"]))
+            except Exception:
+                pass
+        return "\n\n".join(partes)
 
 
 def obter_resumo_estatistico(caminho_banco: Optional[Path | str] = None) -> dict[str, Any]:

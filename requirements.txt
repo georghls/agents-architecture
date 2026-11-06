@@ -5,7 +5,7 @@ mcp>=2.1.1
 psycopg[binary]>=3.2.0
 
 # IA Google Gemini (Embeddings e LLM)
-google-generativeai>=0.8.0
+google-genai>=1.0.0
 
 # Configuração e Validação
 python-dotenv>=1.0.0

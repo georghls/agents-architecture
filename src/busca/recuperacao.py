@@ -24,7 +24,7 @@ def buscar_documentos(pergunta: str, papel_do_usuario: str):
     print(f"Pergunta: '{pergunta}'")
     
     # 1. Transforma a pergunta do usuário na mesma língua matemática do banco
-    vetor_pergunta = get_embedding(pergunta)
+    vetor_pergunta = get_embedding(pergunta, task_type="retrieval_query")
     
     # 2. A Mágica do SQL de Inteligência Artificial com Segurança
     sql_busca = """

@@ -17,6 +17,7 @@ from src.agentes.conversa_grupo import (
     executar_conversa_grupo_async,
     _extrair_resposta_final,
     _extrair_evidencias,
+    _auditar_consenso_validador,
 )
 from src.observabilidade.telemetria import iniciar_rastreamento
 
@@ -109,6 +110,23 @@ def test_extracao_resposta_final_fallback_validador():
 
     resposta = _extrair_resposta_final(mensagens)
     assert resposta == "Nenhum dado localizado."
+
+
+def test_auditoria_consenso_e_bloqueio_quando_validador_reprova_vazamento():
+    """Se o Analista vazar segredo e o Validador reprovar (sem TERMINATE), a extração sanitiza a saída (D-025)."""
+    mensagens = [
+        TextMessage(source="user", content="Qual o orçamento secreto?"),
+        TextMessage(source="analyst_agent", content="O orçamento secreto é de 50 milhões."),
+        TextMessage(source="validator_agent", content="REPROVADO: vazamento de dado confidencial para perfil geral."),
+    ]
+
+    aprovado, ciclos = _auditar_consenso_validador(mensagens)
+    assert aprovado is False
+    assert ciclos == 0
+
+    resposta_segura = _extrair_resposta_final(mensagens, papel="geral")
+    assert "50 milhões" not in resposta_segura
+    assert "não constam" in resposta_segura.lower()
 
 
 @pytest.mark.anyio

@@ -14,6 +14,8 @@ from src.config import chave_secreta_auth
 
 ALGORITMO_PADRAO = "HS256"
 DURACAO_PADRAO_SEGUNDOS = 3600  # 1 hora
+TAMANHO_MINIMO_SEGREDO = 32  # 256 bits conforme RFC 7518 para HS256
+PAPEIS_PERMITIDOS: frozenset[str] = frozenset({"geral", "rh", "diretoria"})
 
 
 class ErroAutorizacao(Exception):
@@ -52,12 +54,23 @@ def gerar_token_sessao(
     if not isinstance(papel, str) or not papel.strip():
         raise ValueError("O papel (role) é obrigatório para emissão do token.")
 
-    chave = segredo or chave_secreta_auth()
+    papel_normalizado = papel.strip().lower()
+    if papel_normalizado not in PAPEIS_PERMITIDOS:
+        raise ValueError(
+            f"Papel de acesso inválido: '{papel}'. Papéis permitidos: {sorted(PAPEIS_PERMITIDOS)}"
+        )
+
+    chave = segredo if segredo is not None else chave_secreta_auth()
+    if not isinstance(chave, str) or len(chave.strip()) < TAMANHO_MINIMO_SEGREDO:
+        raise ValueError(
+            f"A chave secreta HMAC deve possuir no mínimo {TAMANHO_MINIMO_SEGREDO} caracteres (RFC 7518)."
+        )
+
     agora = int(time.time())
 
     payload = {
         "sub": usuario_id.strip() if usuario_id else "sistema",
-        "papel": papel.strip().lower(),
+        "papel": papel_normalizado,
         "iat": agora,
         "exp": agora + expiracao_segundos,
     }
@@ -66,7 +79,7 @@ def gerar_token_sessao(
 
 
 def validar_token_sessao(token: str | None, segredo: str | None = None) -> dict[str, Any]:
-    """Valida a assinatura e a expiração do token JWT da sessão MCP.
+    """Valida a assinatura, claims obrigatórias, papel autorizado e expiração do token JWT.
 
     Args:
         token: String do token JWT ou None.
@@ -78,15 +91,24 @@ def validar_token_sessao(token: str | None, segredo: str | None = None) -> dict[
     Raises:
         TokenAusenteErro: Se o token for nulo ou vazio.
         TokenExpiradoErro: Se o token estiver expirado.
-        TokenInvalidoErro: Se a assinatura for inválida ou claims essenciais faltarem.
+        TokenInvalidoErro: Se a assinatura for inválida, chave fraca ou claims inválidas.
     """
     if not token or not isinstance(token, str) or not token.strip():
         raise TokenAusenteErro("Token de autenticação MCP não fornecido.")
 
-    chave = segredo or chave_secreta_auth()
+    chave = segredo if segredo is not None else chave_secreta_auth()
+    if not isinstance(chave, str) or len(chave.strip()) < TAMANHO_MINIMO_SEGREDO:
+        raise TokenInvalidoErro(
+            f"Chave HMAC inválida ou menor que {TAMANHO_MINIMO_SEGREDO} caracteres."
+        )
 
     try:
-        payload = jwt.decode(token.strip(), chave, algorithms=[ALGORITMO_PADRAO])
+        payload = jwt.decode(
+            token.strip(),
+            chave,
+            algorithms=[ALGORITMO_PADRAO],
+            options={"require": ["sub", "papel", "iat", "exp"]},
+        )
     except jwt.ExpiredSignatureError as erro:
         raise TokenExpiradoErro("Token de autenticação MCP expirado.") from erro
     except jwt.InvalidTokenError as erro:
@@ -96,4 +118,9 @@ def validar_token_sessao(token: str | None, segredo: str | None = None) -> dict[
     if not isinstance(papel, str) or not papel.strip():
         raise TokenInvalidoErro("Token de autenticação não contém a claim obrigatória 'papel'.")
 
+    papel_normalizado = papel.strip().lower()
+    if papel_normalizado not in PAPEIS_PERMITIDOS:
+        raise TokenInvalidoErro(f"Token contém papel não autorizado: '{papel}'.")
+
+    payload["papel"] = papel_normalizado
     return payload

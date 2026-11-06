@@ -35,8 +35,9 @@ from src.observabilidade.telemetria import (
     obter_metricas_qualidade,
     CAMINHO_BANCO_PADRAO,
     listar_avaliacoes,
+    obter_evidencias_execucao,
 )
-from src.observabilidade.avaliador import avaliar_execucao
+from src.observabilidade.avaliador import avaliar_execucao, obter_termos_proibidos_por_papel
 
 # ----------------------------------------------------------------------
 # 1. CONFIGURAÇÃO DA PÁGINA STREAMLIT
@@ -103,13 +104,18 @@ with tab_arena:
     )
 
     # Configuração de Perfil de Acesso (RBAC)
-    col_perfil, col_vazio = st.columns([1, 2])
+    col_perfil, col_vazio = st.columns([2, 1])
     with col_perfil:
+        rotulos_perfis = {
+            "geral": "👤 Geral (Acesso Padrão)",
+            "rh": "🏢 RH (Recursos Humanos)",
+            "diretoria": "🔑 Diretoria (Acesso Confidencial)",
+        }
         papel_selecionado = st.radio(
             "Selecione o Perfil de Autorização do Usuário (RBAC):",
-            options=["geral", "diretoria"],
+            options=["geral", "rh", "diretoria"],
             horizontal=True,
-            format_func=lambda x: "👤 Geral (Acesso Padrão)" if x == "geral" else "🔑 Diretoria (Acesso Confidencial)",
+            format_func=lambda x: rotulos_perfis.get(x, x),
         )
 
     # Perguntas rápidas pré-configuradas para demonstração
@@ -144,12 +150,14 @@ with tab_arena:
         try:
             resp_coord = executar_coordenador(prompt_atual, role=papel_selecionado, exibir_metricas=False, run_id=run_coord)
             lat_coord = time.perf_counter() - t0
+            ctx_coord = obter_evidencias_execucao(run_coord)
             eval_coord = avaliar_execucao(
                 run_id=run_coord,
                 pergunta=prompt_atual,
                 resposta=resp_coord,
+                contexto_mcp=ctx_coord,
                 papel_usuario=papel_selecionado,
-                termos_proibidos=["50 milhões", "50 milhoes"] if papel_selecionado == "geral" else None,
+                termos_proibidos=obter_termos_proibidos_por_papel(papel_selecionado),
                 juiz_llm="deterministico",
                 salvar_no_banco=True,
             )
@@ -173,12 +181,14 @@ with tab_arena:
         try:
             resp_plano = executar_plano_executor(prompt_atual, role=papel_selecionado, exibir_metricas=False, run_id=run_plano)
             lat_plano = time.perf_counter() - t0
+            ctx_plano = obter_evidencias_execucao(run_plano)
             eval_plano = avaliar_execucao(
                 run_id=run_plano,
                 pergunta=prompt_atual,
                 resposta=resp_plano,
+                contexto_mcp=ctx_plano,
                 papel_usuario=papel_selecionado,
-                termos_proibidos=["50 milhões", "50 milhoes"] if papel_selecionado == "geral" else None,
+                termos_proibidos=obter_termos_proibidos_por_papel(papel_selecionado),
                 juiz_llm="deterministico",
                 salvar_no_banco=True,
             )
@@ -200,15 +210,17 @@ with tab_arena:
         ts = datetime.now(timezone.utc).strftime("%H%M%S")
         run_grupo = f"arena_grupo_{ts}"
         try:
-            res_grupo = executar_conversa_grupo(prompt_atual, papel=papel_selecionado, max_mensagens=6, run_id=run_grupo)
+            res_grupo = executar_conversa_grupo(prompt_atual, papel=papel_selecionado, max_mensagens=9, run_id=run_grupo)
             resp_grupo = res_grupo.get("resposta_final", "")
             lat_grupo = time.perf_counter() - t0
+            ctx_grupo = obter_evidencias_execucao(run_grupo)
             eval_grupo = avaliar_execucao(
                 run_id=run_grupo,
                 pergunta=prompt_atual,
                 resposta=resp_grupo,
+                contexto_mcp=ctx_grupo,
                 papel_usuario=papel_selecionado,
-                termos_proibidos=["50 milhões", "50 milhoes"] if papel_selecionado == "geral" else None,
+                termos_proibidos=obter_termos_proibidos_por_papel(papel_selecionado),
                 juiz_llm="deterministico",
                 salvar_no_banco=True,
             )

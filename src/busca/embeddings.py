@@ -1,28 +1,40 @@
-import google.generativeai as genai
+"""Geração de embeddings semânticos via SDK oficial `google-genai` (D-006, D-024).
+
+Suporta diferenciação assimétrica de `task_type`:
+- `retrieval_document`: para indexação de documentos e chunks na ingestão.
+- `retrieval_query`: para vetorização de perguntas de busca no servidor MCP.
+"""
+
+from typing import Literal
+from google import genai
+from google.genai import types
 
 from src.config import chave_gemini
 
-_configurado = False
+TipoTarefaEmbedding = Literal["retrieval_document", "retrieval_query"]
+
+_cliente: genai.Client | None = None
 
 
-def _configurar() -> None:
-    # Configuração preguiçosa: importar este módulo não exige a chave.
-    global _configurado
-    if not _configurado:
-        genai.configure(api_key=chave_gemini())
-        _configurado = True
+def _obter_cliente() -> genai.Client:
+    """Inicialização preguiçosa: importar este módulo não exige GEMINI_API_KEY."""
+    global _cliente
+    if _cliente is None:
+        _cliente = genai.Client(api_key=chave_gemini())
+    return _cliente
 
 
-def get_embedding(text: str) -> list[float]:
-    """
-    Usa a API do Google Gemini para transformar o texto em vetor.
-    """
-    _configurar()
-    resultado = genai.embed_content(
-        model="models/gemini-embedding-2", # Modelo de embeddings mais recente disponível para sua chave
-        content=text,
-        task_type="retrieval_document"
+def get_embedding(
+    text: str,
+    task_type: TipoTarefaEmbedding = "retrieval_document",
+) -> list[float]:
+    """Transforma o texto em vetor denso de 3072 dimensões usando `models/gemini-embedding-2`."""
+    cliente = _obter_cliente()
+    resultado = cliente.models.embed_content(
+        model="models/gemini-embedding-2",
+        contents=text,
+        config=types.EmbedContentConfig(task_type=task_type),
     )
-    
-    # O Gemini já devolve uma lista de números, então não precisamos do .tolist()
-    return resultado['embedding']
+    if not resultado.embeddings or not resultado.embeddings[0].values:
+        raise RuntimeError("A API de embeddings do Gemini retornou um vetor vazio.")
+    return list(resultado.embeddings[0].values)
