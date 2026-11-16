@@ -19,6 +19,7 @@ from src.agentes.conversa_grupo import (
     _extrair_evidencias,
     _auditar_consenso_validador,
 )
+from src.agentes.mcp_toolkit import RESPOSTA_PADRAO_SEM_ACESSO, padronizar_resposta_sem_acesso
 from src.observabilidade.telemetria import iniciar_rastreamento
 
 
@@ -147,6 +148,29 @@ async def test_execucao_com_cliente_simulado(tmp_path: Path):
     assert "resposta_final" in resultado
     assert isinstance(resultado["mensagens"], list)
     assert resultado["turnos"] > 0
+
+
+def test_padronizar_resposta_sem_acesso_normaliza_variacoes():
+    """Garante que recusas/ausências de documentos sejam padronizadas para a frase única."""
+    variacao = "A empresa não dispõe de registros acessíveis para o seu perfil de acesso."
+    assert padronizar_resposta_sem_acesso(variacao) == RESPOSTA_PADRAO_SEM_ACESSO
+
+    legitima = "O cardápio de segunda-feira oferece feijoada e opção vegetariana."
+    assert padronizar_resposta_sem_acesso(legitima) == legitima
+
+
+def test_extracao_resposta_final_padroniza_ausencia_no_analista():
+    """Quando o analista informa ausência de registros, a extração devolve a mensagem padrão."""
+    mensagens = [
+        TextMessage(source="user", content="Qual a senha do Wi-Fi do RH?"),
+        TextMessage(
+            source="analyst_agent",
+            content="Não constam informações sobre este assunto disponíveis para o seu perfil de acesso.",
+        ),
+        TextMessage(source="validator_agent", content="Aprovado. TERMINATE"),
+    ]
+
+    assert _extrair_resposta_final(mensagens, papel="geral") == RESPOSTA_PADRAO_SEM_ACESSO
 
 
 # ----------------------------------------------------------------------

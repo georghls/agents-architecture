@@ -26,6 +26,35 @@ from src.observabilidade.telemetria import obter_trace_atual
 NOME_FERRAMENTA_MCP = "buscar_documentos_corporativos"
 TIMEOUT_SEGUNDOS = 60.0
 
+RESPOSTA_PADRAO_SEM_ACESSO = (
+    "Não constam informações autorizadas sobre este tema "
+    "disponíveis para consulta no seu perfil de acesso."
+)
+
+_MARCADORES_SEM_ACESSO = (
+    "não constam registros",
+    "nao constam registros",
+    "não constam informações",
+    "nao constam informacoes",
+    "não dispõe de registros",
+    "nao dispoe de registros",
+    "não há informações autorizadas",
+    "não há registros autorizados",
+    "nenhum documento encontrado na base corporativa",
+    "irrelevantes para o tema",
+)
+
+
+def padronizar_resposta_sem_acesso(texto: str) -> str:
+    """Padroniza respostas de ausência de registros ou bloqueio RBAC entre os agentes."""
+    texto_lower = texto.lower()
+    if any(marcador in texto_lower for marcador in _MARCADORES_SEM_ACESSO) or (
+        "perfil de acesso" in texto_lower
+        and ("não " in texto_lower or "nao " in texto_lower or "nenhum" in texto_lower)
+    ):
+        return RESPOSTA_PADRAO_SEM_ACESSO
+    return texto
+
 # Só estes segredos são repassados ao subprocesso, além do ambiente básico do SDK.
 _VARIAVEIS_REPASSADAS = ("DATABASE_URL", "GEMINI_API_KEY", "AUTH_SECRET_KEY")
 
