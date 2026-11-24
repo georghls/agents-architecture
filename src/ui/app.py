@@ -1,23 +1,26 @@
 """Aplicação Web Unificada: Arena Comparativa Multiagente e Dashboard de LLMOps (Streamlit).
 
-Modo Head-to-Head: submete uma pergunta aos três padrões arquiteturais simultaneamente
-(Coordenador, Plano–Executor e Conversação em Grupo) e exibe todas as métricas comparativas
-lado a lado em tempo real, conforme D-020 e D-021 em docs/decisions.md.
+Layout estilo Antigravity:
+- Barra lateral esquerda dedicada ao Histórico de Conversas (com botão '+ Nova Conversa'
+  e lista clicável de todas as sessões passadas).
+- Área principal unificada (sem abas redundantes): ao selecionar qualquer conversa na
+  barra esquerda ou enviar uma nova pergunta, exibe as respostas empilhadas dos 3 agentes,
+  os gráficos comparativos da conversa, o Inspetor de Spans & Evidências MCP da conversa
+  e o Dashboard Consolidado em 2 colunas com a Matriz Comparativa.
 
 Uso:
     streamlit run src/ui/app.py
 """
 
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 import sqlite3
 import sys
 import time
+from typing import Any, Callable
 
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 # Garante inclusão da raiz do projeto no PYTHONPATH
@@ -29,490 +32,792 @@ from src.agentes.coordenador import executar_coordenador
 from src.agentes.plano_executor import executar_plano_executor
 from src.agentes.conversa_grupo import executar_conversa_grupo
 from src.observabilidade.telemetria import (
-    inicializar_banco,
-    listar_execucoes,
-    obter_resumo_estatistico,
-    obter_metricas_qualidade,
     CAMINHO_BANCO_PADRAO,
+    inicializar_banco,
     listar_avaliacoes,
+    listar_execucoes,
     obter_evidencias_execucao,
+    obter_metricas_qualidade,
+    obter_resumo_estatistico,
 )
 from src.observabilidade.avaliador import avaliar_execucao, obter_termos_proibidos_por_papel
 
 # ----------------------------------------------------------------------
-# 1. CONFIGURAÇÃO DA PÁGINA STREAMLIT
+# CONSTANTES DE DOMÍNIO & CORES POR PADRÃO
+# ----------------------------------------------------------------------
+CATALOGO_PADROES = {
+    "coordenador": {
+        "titulo": "Coordenador",
+        "framework": "LangGraph",
+        "topologia": "Sequencial",
+        "cor_badge": "blue",
+    },
+    "plano_executor": {
+        "titulo": "Plano–Executor",
+        "framework": "LangGraph",
+        "topologia": "Fan-Out",
+        "cor_badge": "violet",
+    },
+    "conversa_grupo": {
+        "titulo": "Conversação em Grupo",
+        "framework": "AutoGen 0.4",
+        "topologia": "Round-Robin",
+        "cor_badge": "green",
+    },
+}
+
+CORES_PADROES = {
+    "Coordenador": "#3B82F6",           # Azul
+    "Plano–Executor": "#A855F7",        # Violeta / Roxo
+    "Plano-Executor": "#A855F7",
+    "Plano Executor": "#A855F7",
+    "Conversação em Grupo": "#10B981",  # Verde Esmeralda
+    "Conversacao Em Grupo": "#10B981",
+    "Conversa Grupo": "#10B981",
+}
+
+PERGUNTAS_REFERENCIA = {
+    "Cardápio (Público)": "Qual é o cardápio do refeitório servido na segunda-feira?",
+    "Orçamento X (Diretoria)": "Qual é o orçamento previsto para o Projeto Ultra-Secreto X em 2027?",
+    "Jornada (Público)": "Qual é a jornada de trabalho padrão e os horários da empresa?",
+    "MBA Exterior (Fora do Corpus)": "Qual é a política de reembolso para cursos de pós-graduação e MBA no exterior?",
+}
+
+
+def _ajustar_estilo_antigravity() -> None:
+    """Estiliza a barra lateral de conversas estilo Antigravity, métricas sem corte e spinner formal."""
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            padding-top: 1.5rem;
+            padding-bottom: 3rem;
+            max-width: 1440px;
+        }
+        /* Estilo da Sidebar estilo Antigravity (lista de conversas em linha única com tempo à direita) */
+        section[data-testid="stSidebar"] {
+            background-color: #0B0D12;
+            border-right: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {
+            gap: 0.25rem !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button {
+            width: 100% !important;
+            padding: 0.42rem 0.65rem !important;
+            min-height: 36px !important;
+            border-radius: 7px !important;
+            transition: background-color 0.12s ease, border-color 0.12s ease !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+            background: #3B82F6 !important;
+            border: 1px solid #3B82F6 !important;
+            color: #FFFFFF !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button[kind="primary"] div[data-testid="stMarkdownContainer"] {
+            justify-content: center !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button[kind="primary"] div[data-testid="stMarkdownContainer"] p {
+            color: #FFFFFF !important;
+            font-weight: 600 !important;
+            font-size: 0.85rem !important;
+            text-align: center !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button[kind="tertiary"] {
+            background: transparent !important;
+            border: 1px solid transparent !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button[kind="tertiary"]:hover {
+            background: rgba(255, 255, 255, 0.04) !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button[kind="secondary"] {
+            background: #161922 !important;
+            border: 1px solid rgba(255, 255, 255, 0.14) !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button:not([kind="primary"]) div[data-testid="stMarkdownContainer"] {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            width: 100% !important;
+            gap: 8px !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button:not([kind="primary"]) div[data-testid="stMarkdownContainer"] p:first-child {
+            text-align: left !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            margin: 0 !important;
+            font-size: 0.84rem !important;
+            font-weight: 400 !important;
+            color: #9CA3AF !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button[kind="secondary"] div[data-testid="stMarkdownContainer"] p:first-child {
+            color: #F3F4F6 !important;
+            font-weight: 500 !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button:not([kind="primary"]) div[data-testid="stMarkdownContainer"] p:last-child {
+            margin: 0 !important;
+            font-size: 0.75rem !important;
+            color: #6B7280 !important;
+            white-space: nowrap !important;
+            flex-shrink: 0 !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button[kind="secondary"] div[data-testid="stMarkdownContainer"] p:last-child {
+            color: #3B82F6 !important;
+            font-size: 0.7rem !important;
+        }
+        /* Métricas sem corte */
+        div[data-testid="stMetric"] {
+            padding: 0.6rem 0.7rem !important;
+        }
+        div[data-testid="stMetricValue"],
+        div[data-testid="stMetricValue"] > div {
+            font-size: 1.05rem !important;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: unset !important;
+        }
+        div[data-testid="stMetricLabel"],
+        div[data-testid="stMetricLabel"] > div,
+        div[data-testid="stMetricLabel"] p {
+            font-size: 0.75rem !important;
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: unset !important;
+        }
+        /* Remove o boneco de esportes do Streamlit no canto superior direito e usa spinner formal */
+        div[data-testid="stStatusWidget"] img,
+        div[data-testid="stStatusWidget"] svg {
+            display: none !important;
+        }
+        div[data-testid="stStatusWidget"] > div::before {
+            content: "";
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-right: 6px;
+            border: 2px solid rgba(59, 130, 246, 0.35);
+            border-top-color: #3B82F6;
+            border-radius: 50%;
+            animation: st-formal-spin 0.8s linear infinite;
+            vertical-align: middle;
+        }
+        @keyframes st-formal-spin {
+            to { transform: rotate(360deg); }
+        }
+        #MainMenu, footer, .stAppDeployButton, div[data-testid="stAppDeployButton"] {
+            display: none !important;
+            visibility: hidden !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def renderizar_grid_dinamico(
+    painel_callbacks: list[Callable[[], None]],
+    colunas_por_linha: int = 2,
+    gap: str = "medium",
+    borda_celula: bool = True,
+) -> None:
+    """Distribui uma lista de painéis em um grid de N colunas por linha."""
+    if not painel_callbacks:
+        st.info("Nenhum painel selecionado no grid. Ative ao menos um módulo em 'Personalizar Painéis'.")
+        return
+
+    n_cols = max(1, min(int(colunas_por_linha), len(painel_callbacks)))
+    for inicio in range(0, len(painel_callbacks), n_cols):
+        fatia = painel_callbacks[inicio : inicio + n_cols]
+        colunas = st.columns(n_cols, gap=gap, vertical_alignment="top", border=borda_celula)
+        for idx, render_fn in enumerate(fatia):
+            with colunas[idx]:
+                render_fn()
+
+
+def _buscar_spans_execucao(run_id: str) -> list[dict[str, Any]]:
+    """Consulta a árvore de spans registrada no SQLite para um `run_id`."""
+    if not run_id:
+        return []
+    with sqlite3.connect(CAMINHO_BANCO_PADRAO) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM spans WHERE run_id = ? ORDER BY timestamp_inicio ASC", (run_id,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def _tempo_relativo_curto(iso_str: str) -> str:
+    """Converte um timestamp ISO UTC em rótulo curto ('agora', '15m', '3h', '2d', '12d')."""
+    if not iso_str:
+        return "agora"
+    try:
+        texto = str(iso_str).strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(texto)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        delta_s = max(0, int((datetime.now(timezone.utc) - dt).total_seconds()))
+        if delta_s < 60:
+            return "agora"
+        minutos = delta_s // 60
+        if minutos < 60:
+            return f"{minutos}m"
+        horas = minutos // 60
+        if horas < 24:
+            return f"{horas}h"
+        dias = horas // 24
+        return f"{dias}d"
+    except Exception:
+        return "1d"
+
+
+def _construir_historico_sessoes(
+    execucoes: list[dict[str, Any]],
+    mapa_avaliacoes: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Agrupa execuções individuais do SQLite em conversas comparativas (1 linha por rodada)."""
+    sessoes: list[dict[str, Any]] = []
+    for ex in execucoes:
+        padrao = ex.get("padrao_arquitetural", "")
+        if padrao not in CATALOGO_PADROES:
+            continue
+
+        pergunta = ex.get("pergunta", "")
+        papel = ex.get("papel_usuario", "geral")
+        rid = ex.get("run_id", "")
+        av = mapa_avaliacoes.get(rid, {})
+
+        item_padrao = {
+            "padrao": padrao,
+            "resposta": ex.get("resposta_final") or "",
+            "latencia_s": round((ex.get("latencia_total_ms") or 0.0) / 1000.0, 2),
+            "run_id": rid,
+            "sucesso": bool(ex.get("sucesso", 1)),
+            "erro": ex.get("erro"),
+            "rbac_ok": not bool(av.get("falha_seguranca", 0)),
+            "alucinacao": bool(av.get("houve_alucinacao", 0)),
+            "fidelidade": float(av.get("fidelidade_score", 1.0)),
+            "tokens": int(ex.get("total_tokens") or 0),
+            "custo_brl": float(ex.get("custo_brl") or 0.0),
+            "chamadas_mcp": int(ex.get("chamadas_mcp") or 0),
+            "chamadas_llm": int(ex.get("chamadas_llm") or 0),
+        }
+
+        # Procura uma sessão aberta da mesma pergunta + papel que ainda não tenha este padrão
+        sessao_alvo = next(
+            (
+                s for s in sessoes
+                if s["pergunta"] == pergunta
+                and s["papel"] == papel
+                and padrao not in s["resultados"]
+            ),
+            None,
+        )
+        if sessao_alvo is not None:
+            sessao_alvo["resultados"][padrao] = item_padrao
+            sessao_alvo["run_ids"].append(rid)
+        else:
+            ts_iso = str(ex.get("timestamp_inicio", ""))
+            sessoes.append({
+                "sessao_id": rid,
+                "timestamp_iso": ts_iso,
+                "timestamp": ts_iso[:19].replace("T", " "),
+                "tempo_relativo": _tempo_relativo_curto(ts_iso),
+                "pergunta": pergunta,
+                "papel": papel,
+                "resultados": {padrao: item_padrao},
+                "run_ids": [rid],
+            })
+
+    for s in sessoes:
+        res_vals = list(s["resultados"].values())
+        s["padroes_str"] = ", ".join(CATALOGO_PADROES[k]["titulo"] for k in CATALOGO_PADROES if k in s["resultados"])
+        s["latencia_total_s"] = round(sum(r.get("latencia_s", 0.0) for r in res_vals), 2)
+        s["tokens_totais"] = sum(r.get("tokens", 0) for r in res_vals)
+        s["custo_total_brl"] = round(sum(r.get("custo_brl", 0.0) for r in res_vals), 4)
+
+    return sessoes
+
+
+@st.dialog("Inspeção de Execução & Evidências MCP", width="large")
+def abrir_modal_inspecao(run_id: str, titulo_padrao: str, papel: str, resposta: str) -> None:
+    """Dialog modal nativo para inspecionar trechos MCP e spans."""
+    with st.container(horizontal=True, vertical_alignment="center", wrap=True):
+        st.badge(titulo_padrao, color="blue")
+        st.badge(f"Perfil: {papel.upper()}", color="violet")
+        st.code(run_id, language=None)
+
+    tab_ev, tab_sp, tab_resp = st.tabs(["Evidências MCP", "Árvore de Spans", "Resposta Completa"])
+
+    with tab_ev:
+        evidencias = obter_evidencias_execucao(run_id)
+        if evidencias:
+            st.code(evidencias, language="markdown", wrap_lines=True)
+        else:
+            st.caption("Nenhuma evidência documental retornada pelo servidor MCP nesta execução.")
+
+    with tab_sp:
+        spans = _buscar_spans_execucao(run_id)
+        if not spans:
+            st.caption("Nenhum sub-span individual registrado para esta execução.")
+        else:
+            df_sp = pd.DataFrame(spans)
+            st.dataframe(
+                df_sp[["span_id", "nome_span", "tipo", "duracao_ms", "timestamp_inicio"]],
+                width="stretch",
+                hide_index=True,
+            )
+
+    with tab_resp:
+        st.markdown(resposta or "_Sem resposta registrada._")
+
+
+def _executar_padrao(
+    chave: str,
+    funcao_execucao: Callable[[], tuple[str, dict[str, Any]]],
+    pergunta: str,
+    papel: str,
+    run_id: str,
+) -> dict[str, Any]:
+    """Executa um padrão arquitetural, avalia RBAC/fidelidade e persiste métricas."""
+    t0 = time.perf_counter()
+    try:
+        resposta, extras = funcao_execucao()
+        latencia = time.perf_counter() - t0
+        contexto_mcp = obter_evidencias_execucao(run_id)
+        avaliacao = avaliar_execucao(
+            run_id=run_id,
+            pergunta=pergunta,
+            resposta=resposta,
+            contexto_mcp=contexto_mcp,
+            papel_usuario=papel,
+            termos_proibidos=obter_termos_proibidos_por_papel(papel),
+            juiz_llm="deterministico",
+            salvar_no_banco=True,
+        )
+        return {
+            "padrao": chave,
+            "resposta": resposta,
+            "latencia_s": round(latencia, 2),
+            "run_id": run_id,
+            "sucesso": True,
+            "rbac_ok": not avaliacao.falha_seguranca,
+            "alucinacao": avaliacao.houve_alucinacao,
+            "fidelidade": avaliacao.fidelidade_score,
+            **extras,
+        }
+    except Exception as err:
+        return {"padrao": chave, "erro": str(err), "sucesso": False, "latencia_s": 0}
+
+
+def _render_painel_agente_empilhado(chave: str, dados: dict[str, Any], papel: str) -> None:
+    """Renderiza o resultado de um padrão em largura total (um abaixo do outro)."""
+    meta = CATALOGO_PADROES[chave]
+    run_id = dados.get("run_id", "")
+
+    with st.container(border=True):
+        with st.container(horizontal=True, horizontal_alignment="distribute", vertical_alignment="center", wrap=True):
+            st.markdown(f"#### {meta['titulo']}")
+
+            if dados.get("sucesso") and run_id:
+                if st.button("Evidências & Spans", key=f"insp_{run_id}"):
+                    abrir_modal_inspecao(run_id, meta["titulo"], papel, dados.get("resposta", ""))
+
+        if not dados.get("sucesso"):
+            st.error(f"Erro na execução: {dados.get('erro', 'falha desconhecida')}")
+            return
+
+        m1, m2, m3, m4 = st.columns(4, gap="medium")
+        m1.metric("Latência", f"{dados.get('latencia_s', 0):.2f} s", border=True)
+        m2.metric("Tokens Consumidos", f"{dados.get('tokens', 0):,}", border=True)
+        m3.metric("Custo Financeiro", f"R$ {dados.get('custo_brl', 0):.4f}", border=True)
+        m4.metric("Fidelidade Semântica", f"{dados.get('fidelidade', 0.0) * 100:.0f}%", border=True)
+
+        with st.container(border=True):
+            st.markdown(dados.get("resposta", ""))
+
+
+# ----------------------------------------------------------------------
+# 1. CONFIGURAÇÃO DA PÁGINA & DADOS BASE
 # ----------------------------------------------------------------------
 st.set_page_config(
-    page_title="Arena Multiagente & LLMOps — UNICAMP",
-    page_icon="⚖️",
+    page_title="Plataforma Multiagente & LLMOps — UNICAMP",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Inicializa o banco local
+_ajustar_estilo_antigravity()
 inicializar_banco()
 
+resumo_op = obter_resumo_estatistico()
+resumo_qual = obter_metricas_qualidade()
+todas_execucoes = [e for e in listar_execucoes(limite=150) if "simulada" not in str(e.get("resposta_final", ""))]
+mapa_avaliacoes = {a["run_id"]: a for a in listar_avaliacoes(limite=250)}
+sessoes_historico = _construir_historico_sessoes(todas_execucoes, mapa_avaliacoes)
+total_exec = sum(d.get("total_execucoes", 0) for d in resumo_op.values()) if resumo_op else 0
+colunas_dashboard = 2
+
+if "ultima_rodada" not in st.session_state:
+    st.session_state.ultima_rodada = sessoes_historico[0] if sessoes_historico else None
+
 
 # ----------------------------------------------------------------------
-# 2. BARRA LATERAL (SIDEBAR)
+# 2. BARRA LATERAL ESQUERDA (HISTÓRICO DE CONVERSAS ESTILO ANTIGRAVITY)
 # ----------------------------------------------------------------------
 with st.sidebar:
-    st.title("🎓 UNICAMP")
-    st.markdown("### **Engenharia de Software para IA**")
-    st.caption("Comparação Empírica de Padrões Multiagentes (MCP & LLMOps)")
-    
-    st.divider()
-    st.markdown("#### ⚙️ Status da Infraestrutura")
-    
-    resumo_op = obter_resumo_estatistico()
-    total_exec = sum(d.get("total_execucoes", 0) for d in resumo_op.values()) if resumo_op else 0
-    
-    st.success("🟢 Servidor MCP (stdio): Ativo")
-    st.info("☁️ Banco Vetorial: Supabase + pgvector")
-    st.metric("Consultas Reais Coletadas", total_exec)
-    
-    st.divider()
-    st.markdown("#### 🔬 Padrões Avaliados")
-    st.markdown("""
-    - **1. Coordenador**: Roteamento supervisor/redator via *LangGraph*.
-    - **2. Plano–Executor**: Decomposição em tarefas concorrentes via *LangGraph*.
-    - **3. Conversação em Grupo**: Três agentes em debate *Round-Robin* via *AutoGen 0.4*.
-    """)
-    
-    st.divider()
-    st.caption("Fase 4 & 5 — Observabilidade, FinOps e Evals")
+    st.markdown("#### Conversas")
+    if st.button("+ Nova Conversa", type="primary", use_container_width=True):
+        st.session_state.ultima_rodada = None
+        st.rerun()
 
-
-# ----------------------------------------------------------------------
-# 3. ABAS PRINCIPAIS
-# ----------------------------------------------------------------------
-tab_arena, tab_dashboard, tab_auditoria = st.tabs([
-    "⚖️ Arena Comparativa (Head-to-Head)",
-    "📊 Dashboard Consolidado",
-    "🔬 Inspeção de Spans & Auditoria",
-])
-
-
-# ======================================================================
-# ABA 1: ARENA COMPARATIVA (EXECUÇÃO SIMULTÂNEA DOS 3 AGENTES)
-# ======================================================================
-with tab_arena:
-    st.header("Arena Comparativa de Agentes em Tempo Real")
-    st.markdown(
-        "Submeta uma pergunta corporativa e veja os **três padrões arquiteturais responderem lado a lado**, "
-        "com comparação instantânea de latência, consumo de tokens, custos financeiros e conformidade de acesso."
+    filtro_busca = st.text_input(
+        "Buscar conversa",
+        placeholder="Filtrar histórico...",
+        label_visibility="collapsed",
     )
 
-    # Configuração de Perfil de Acesso (RBAC)
-    col_perfil, col_vazio = st.columns([2, 1])
-    with col_perfil:
-        rotulos_perfis = {
-            "geral": "👤 Geral (Acesso Padrão)",
-            "rh": "🏢 RH (Recursos Humanos)",
-            "diretoria": "🔑 Diretoria (Acesso Confidencial)",
-        }
-        papel_selecionado = st.radio(
-            "Selecione o Perfil de Autorização do Usuário (RBAC):",
-            options=["geral", "rh", "diretoria"],
-            horizontal=True,
-            format_func=lambda x: rotulos_perfis.get(x, x),
-        )
+    st.caption(f"{len(sessoes_historico)} sessões registradas")
 
-    # Perguntas rápidas pré-configuradas para demonstração
-    st.markdown("**Perguntas sugeridas para teste comparativo:**")
-    btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
-    pergunta_clicada = None
-    if btn_col1.button("🍽️ Cardápio Refeitório (Público)"):
-        pergunta_clicada = "Qual é o cardápio do refeitório servido na segunda-feira?"
-    if btn_col2.button("🔒 Orçamento Secreto (Diretoria)"):
-        pergunta_clicada = "Qual é o orçamento previsto para o Projeto Ultra-Secreto X em 2027?"
-    if btn_col3.button("⏰ Jornada de Trabalho (Público)"):
-        pergunta_clicada = "Qual é a jornada de trabalho padrão e os horários da empresa?"
-    if btn_col4.button("🚫 Curso no Exterior (Fora do Corpus)"):
-        pergunta_clicada = "Qual é a política de reembolso para cursos de pós-graduação e MBA no exterior?"
+    sessao_ativa_id = (
+        st.session_state.ultima_rodada.get("sessao_id")
+        if st.session_state.ultima_rodada
+        else None
+    )
 
-    # Entrada de texto do usuário
-    entrada_usuario = st.chat_input("Digite sua pergunta corporativa para submeter aos 3 agentes simultaneamente...")
-    prompt_atual = pergunta_clicada or entrada_usuario
+    sessoes_exibidas = [
+        s for s in sessoes_historico
+        if not filtro_busca.strip()
+        or filtro_busca.strip().lower() in s["pergunta"].lower()
+        or filtro_busca.strip().lower() in s["papel"].lower()
+    ]
 
-    if "ultima_rodada" not in st.session_state:
-        st.session_state.ultima_rodada = None
-
-    if prompt_atual:
-        status_container = st.status("🚀 Iniciando execução comparativa nos 3 padrões...", expanded=True)
-        resultados_rodada = {}
-
-        # 1. Executa o Coordenador
-        status_container.write("⏳ Executando Padrão 1: **Coordenador (LangGraph)**...")
-        t0 = time.perf_counter()
-        ts = datetime.now(timezone.utc).strftime("%H%M%S")
-        run_coord = f"arena_coord_{ts}"
-        try:
-            resp_coord = executar_coordenador(prompt_atual, role=papel_selecionado, exibir_metricas=False, run_id=run_coord)
-            lat_coord = time.perf_counter() - t0
-            ctx_coord = obter_evidencias_execucao(run_coord)
-            eval_coord = avaliar_execucao(
-                run_id=run_coord,
-                pergunta=prompt_atual,
-                resposta=resp_coord,
-                contexto_mcp=ctx_coord,
-                papel_usuario=papel_selecionado,
-                termos_proibidos=obter_termos_proibidos_por_papel(papel_selecionado),
-                juiz_llm="deterministico",
-                salvar_no_banco=True,
-            )
-            resultados_rodada["coordenador"] = {
-                "resposta": resp_coord,
-                "latencia_s": round(lat_coord, 2),
-                "run_id": run_coord,
-                "sucesso": True,
-                "rbac_ok": not eval_coord.falha_seguranca,
-                "alucinacao": eval_coord.houve_alucinacao,
-                "fidelidade": eval_coord.fidelidade_score,
-            }
-        except Exception as err:
-            resultados_rodada["coordenador"] = {"erro": str(err), "sucesso": False, "latencia_s": 0}
-
-        # 2. Executa o Plano-Executor
-        status_container.write("⏳ Executando Padrão 2: **Plano–Executor (LangGraph Fan-Out)**...")
-        t0 = time.perf_counter()
-        ts = datetime.now(timezone.utc).strftime("%H%M%S")
-        run_plano = f"arena_plano_{ts}"
-        try:
-            resp_plano = executar_plano_executor(prompt_atual, role=papel_selecionado, exibir_metricas=False, run_id=run_plano)
-            lat_plano = time.perf_counter() - t0
-            ctx_plano = obter_evidencias_execucao(run_plano)
-            eval_plano = avaliar_execucao(
-                run_id=run_plano,
-                pergunta=prompt_atual,
-                resposta=resp_plano,
-                contexto_mcp=ctx_plano,
-                papel_usuario=papel_selecionado,
-                termos_proibidos=obter_termos_proibidos_por_papel(papel_selecionado),
-                juiz_llm="deterministico",
-                salvar_no_banco=True,
-            )
-            resultados_rodada["plano_executor"] = {
-                "resposta": resp_plano,
-                "latencia_s": round(lat_plano, 2),
-                "run_id": run_plano,
-                "sucesso": True,
-                "rbac_ok": not eval_plano.falha_seguranca,
-                "alucinacao": eval_plano.houve_alucinacao,
-                "fidelidade": eval_plano.fidelidade_score,
-            }
-        except Exception as err:
-            resultados_rodada["plano_executor"] = {"erro": str(err), "sucesso": False, "latencia_s": 0}
-
-        # 3. Executa a Conversação em Grupo
-        status_container.write("⏳ Executando Padrão 3: **Conversação em Grupo (AutoGen 0.4 Round-Robin)**...")
-        t0 = time.perf_counter()
-        ts = datetime.now(timezone.utc).strftime("%H%M%S")
-        run_grupo = f"arena_grupo_{ts}"
-        try:
-            res_grupo = executar_conversa_grupo(prompt_atual, papel=papel_selecionado, max_mensagens=9, run_id=run_grupo)
-            resp_grupo = res_grupo.get("resposta_final", "")
-            lat_grupo = time.perf_counter() - t0
-            ctx_grupo = obter_evidencias_execucao(run_grupo)
-            eval_grupo = avaliar_execucao(
-                run_id=run_grupo,
-                pergunta=prompt_atual,
-                resposta=resp_grupo,
-                contexto_mcp=ctx_grupo,
-                papel_usuario=papel_selecionado,
-                termos_proibidos=obter_termos_proibidos_por_papel(papel_selecionado),
-                juiz_llm="deterministico",
-                salvar_no_banco=True,
-            )
-            resultados_rodada["conversa_grupo"] = {
-                "resposta": resp_grupo,
-                "latencia_s": round(lat_grupo, 2),
-                "run_id": run_grupo,
-                "sucesso": True,
-                "rbac_ok": not eval_grupo.falha_seguranca,
-                "alucinacao": eval_grupo.houve_alucinacao,
-                "fidelidade": eval_grupo.fidelidade_score,
-                "turnos": res_grupo.get("turnos", 0),
-            }
-        except Exception as err:
-            resultados_rodada["conversa_grupo"] = {"erro": str(err), "sucesso": False, "latencia_s": 0}
-
-        # Atualiza métricas detalhadas a partir do SQLite
-        execucoes_db = {e["run_id"]: e for e in listar_execucoes(limite=20)}
-        for padrao, dados in resultados_rodada.items():
-            if dados.get("sucesso"):
-                rid = dados.get("run_id")
-                if rid in execucoes_db:
-                    row = execucoes_db[rid]
-                    dados["tokens"] = row["total_tokens"]
-                    dados["custo_brl"] = row["custo_brl"]
-                    dados["chamadas_mcp"] = row["chamadas_mcp"]
-                    dados["chamadas_llm"] = row["chamadas_llm"]
-
-        status_container.update(label="✅ Execução comparativa concluída com sucesso nos 3 agentes!", state="complete", expanded=False)
-
-        st.session_state.ultima_rodada = {
-            "pergunta": prompt_atual,
-            "papel": papel_selecionado,
-            "resultados": resultados_rodada,
-        }
-
-    # Renderiza os resultados da última rodada submetida
-    if st.session_state.ultima_rodada:
-        rodada = st.session_state.ultima_rodada
-        st.divider()
-        st.markdown(f"### 🎯 Pergunta Avaliada: *\"{rodada['pergunta']}\"*")
-        st.caption(f"Perfil de Acesso Utilizado: **{rodada['papel'].upper()}**")
-
-        res = rodada["resultados"]
-        c1, c2, c3 = st.columns(3)
-
-        # Coluna 1: Coordenador
-        with c1:
-            st.subheader("👔 1. Coordenador")
-            st.caption("LangGraph • Roteamento Sequencial")
-            d_c = res.get("coordenador", {})
-            if d_c.get("sucesso"):
-                st.metric("⏱️ Latência", f"{d_c.get('latencia_s', 0):.2f} s")
-                k1, k2 = st.columns(2)
-                k1.metric("Tokens", f"{d_c.get('tokens', 0):,}")
-                k2.metric("Custo", f"R$ {d_c.get('custo_brl', 0):.4f}")
-                
-                status_rbac = "✅ RBAC OK" if d_c.get("rbac_ok") else "🚨 VAZAMENTO"
-                st.info(f"**Segurança:** {status_rbac}")
-                with st.expander("📄 Ver Resposta Completa", expanded=True):
-                    st.write(d_c.get("resposta", ""))
-            else:
-                st.error(f"Falha na execução: {d_c.get('erro')}")
-
-        # Coluna 2: Plano-Executor
-        with c2:
-            st.subheader("📋 2. Plano–Executor")
-            st.caption("LangGraph • Tarefas Paralelas (Fan-Out)")
-            d_p = res.get("plano_executor", {})
-            if d_p.get("sucesso"):
-                st.metric("⏱️ Latência", f"{d_p.get('latencia_s', 0):.2f} s")
-                k1, k2 = st.columns(2)
-                k1.metric("Tokens", f"{d_p.get('tokens', 0):,}")
-                k2.metric("Custo", f"R$ {d_p.get('custo_brl', 0):.4f}")
-                
-                status_rbac = "✅ RBAC OK" if d_p.get("rbac_ok") else "🚨 VAZAMENTO"
-                st.info(f"**Segurança:** {status_rbac}")
-                with st.expander("📄 Ver Resposta Completa", expanded=True):
-                    st.write(d_p.get("resposta", ""))
-            else:
-                st.error(f"Falha na execução: {d_p.get('erro')}")
-
-        # Coluna 3: Conversação em Grupo
-        with c3:
-            st.subheader("💬 3. Conversa em Grupo")
-            st.caption("AutoGen 0.4 • Debate Round-Robin")
-            d_g = res.get("conversa_grupo", {})
-            if d_g.get("sucesso"):
-                st.metric("⏱️ Latência", f"{d_g.get('latencia_s', 0):.2f} s")
-                k1, k2 = st.columns(2)
-                k1.metric("Tokens", f"{d_g.get('tokens', 0):,}")
-                k2.metric("Custo", f"R$ {d_g.get('custo_brl', 0):.4f}")
-                
-                status_rbac = "✅ RBAC OK" if d_g.get("rbac_ok") else "🚨 VAZAMENTO"
-                st.info(f"**Segurança:** {status_rbac} ({d_g.get('turnos', 0)} turnos)")
-                with st.expander("📄 Ver Resposta Completa", expanded=True):
-                    st.write(d_g.get("resposta", ""))
-            else:
-                st.error(f"Falha na execução: {d_g.get('erro')}")
-
-        # Gráficos da rodada atual
-        st.divider()
-        st.markdown("#### 📊 Comparativo Imediato da Rodada")
-        
-        dados_rodada = []
-        for p_nome, rotulo in [("coordenador", "Coordenador"), ("plano_executor", "Plano-Executor"), ("conversa_grupo", "Conversa Grupo")]:
-            dados = res.get(p_nome, {})
-            if dados.get("sucesso"):
-                dados_rodada.append({
-                    "Padrão": rotulo,
-                    "Latência (s)": dados.get("latencia_s", 0),
-                    "Tokens": dados.get("tokens", 0),
-                    "Custo (BRL)": dados.get("custo_brl", 0),
-                })
-
-        if dados_rodada:
-            df_rodada = pd.DataFrame(dados_rodada)
-            g1, g2, g3 = st.columns(3)
-            with g1:
-                fig1 = px.bar(df_rodada, x="Padrão", y="Latência (s)", text="Latência (s)", title="⏱️ Latência da Rodada (s)", color="Padrão")
-                fig1.update_traces(textposition="outside")
-                st.plotly_chart(fig1, use_container_width=True)
-            with g2:
-                fig2 = px.bar(df_rodada, x="Padrão", y="Tokens", text="Tokens", title="🪙 Consumo de Tokens", color="Padrão")
-                fig2.update_traces(textposition="outside")
-                st.plotly_chart(fig2, use_container_width=True)
-            with g3:
-                fig3 = px.bar(df_rodada, x="Padrão", y="Custo (BRL)", text="Custo (BRL)", title="💰 Custo Financeiro (R$)", color="Padrão")
-                fig3.update_traces(texttemplate="R$ %{text:.4f}", textposition="outside")
-                st.plotly_chart(fig3, use_container_width=True)
-
-
-# ======================================================================
-# ABA 2: DASHBOARD DE LLMOPS (CONSOLIDADO HISTÓRICO)
-# ======================================================================
-with tab_dashboard:
-    col_tit, col_rec = st.columns([4, 1])
-    with col_tit:
-        st.header("Dashboard Consolidado de LLMOps")
-        st.caption("Visão agregada de todas as perguntas reais submetidas aos agentes.")
-    with col_rec:
-        if st.button("🔄 Atualizar Métricas"):
-            st.rerun()
-
-    resumo_op = obter_resumo_estatistico()
-    resumo_qual = obter_metricas_qualidade()
-
-    if not resumo_op:
-        st.warning("Nenhuma execução real registrada ainda. Submeta uma pergunta na aba 'Arena Comparativa' ou rode a CLI de benchmark.")
+    if not sessoes_exibidas:
+        st.caption("Nenhuma conversa encontrada.")
     else:
-        # KPIs no Topo
-        total_consultas = sum(d.get("total_execucoes", 0) for d in resumo_op.values())
-        custo_acumulado_brl = sum(d.get("custo_total_brl", 0) for d in resumo_op.values())
-        latencia_global = (
-            sum(d.get("latencia_media_ms", 0) * d.get("total_execucoes", 0) for d in resumo_op.values())
-            / total_consultas
-            if total_consultas > 0 else 0
+        for idx, sessao in enumerate(sessoes_exibidas):
+            ativa = sessao.get("sessao_id") == sessao_ativa_id
+            titulo_curto = sessao["pergunta"].strip()
+            if len(titulo_curto) > 25:
+                titulo_curto = titulo_curto[:25].rstrip() + "..."
+
+            indicador_direita = "●" if ativa else sessao.get("tempo_relativo", "1d")
+            rotulo_item = f"{titulo_curto}\n\n{indicador_direita}"
+            if st.button(
+                rotulo_item,
+                key=f"hist_nav_{sessao['sessao_id']}_{idx}",
+                type="secondary" if ativa else "tertiary",
+                use_container_width=True,
+            ):
+                st.session_state.ultima_rodada = sessao
+                st.rerun()
+
+
+# ----------------------------------------------------------------------
+# 3. BARRA SUPERIOR DO WORKSPACE
+# ----------------------------------------------------------------------
+st.subheader("Plataforma de Gerenciamento Multiagente & LLMOps")
+st.caption("UNICAMP · Comparação experimental de Coordenador, Plano–Executor e Conversação em Grupo sobre MCP.")
+
+agentes_ativos = list(CATALOGO_PADROES.keys())
+modulos_dash_ativos = [
+    "Latência por Padrão",
+    "Consumo de Tokens",
+    "Fidelidade vs. Alucinação",
+    "Conformidade RBAC",
+]
+
+
+# ----------------------------------------------------------------------
+# 4. BARRA DE ENTRADA DE PERGUNTA (NOVA CONVERSA)
+# ----------------------------------------------------------------------
+with st.container(border=True):
+    with st.container(horizontal=True, horizontal_alignment="distribute", vertical_alignment="center", wrap=True):
+        rotulos_rbac = {
+            "geral": "Geral",
+            "rh": "RH",
+            "diretoria": "Diretoria",
+        }
+        papel_selecionado = st.segmented_control(
+            "Perfil de Autorização (RBAC)",
+            options=["geral", "rh", "diretoria"],
+            default="geral",
+            format_func=lambda r: rotulos_rbac[r],
+        ) or "geral"
+
+        escolha_preset = st.pills(
+            "Consultas rápidas de validação",
+            options=list(PERGUNTAS_REFERENCIA.keys()),
+            selection_mode="single",
+            wrap=True,
         )
-        total_evals = sum(q.get("total_avaliacoes", 0) for q in resumo_qual.values())
-        rbac_global = (
-            sum(q.get("rbac_conformidade_media", 1.0) * q.get("total_avaliacoes", 0) for q in resumo_qual.values())
-            / total_evals
-            if total_evals > 0 else 1.0
+
+    with st.form("form_consulta_arena", clear_on_submit=False, border=False):
+        col_in, col_sub = st.columns([5, 1], vertical_alignment="bottom")
+        with col_in:
+            pergunta_digitada = st.text_input(
+                "Pergunta corporativa",
+                value=PERGUNTAS_REFERENCIA.get(escolha_preset, "") if escolha_preset else "",
+                placeholder="Digite uma pergunta corporativa ou clique em uma consulta rápida acima...",
+            )
+        with col_sub:
+            disparar = st.form_submit_button("Enviar", type="primary", use_container_width=True)
+
+if disparar and pergunta_digitada.strip():
+    prompt_atual = pergunta_digitada.strip()
+    barra_progresso = st.progress(0.0, text="Inicializando avaliação comparativa...")
+    resultados_rodada: dict[str, dict[str, Any]] = {}
+    ts = datetime.now(timezone.utc).strftime("%H%M%S")
+    total_etapas = max(1, len(agentes_ativos))
+    etapa_atual = 0
+
+    if "coordenador" in agentes_ativos:
+        barra_progresso.progress(
+            etapa_atual / total_etapas,
+            text=f"Etapa {etapa_atual + 1}/{total_etapas}: Processando Coordenador (LangGraph)...",
         )
+        run_coord = f"arena_coord_{ts}"
+        resultados_rodada["coordenador"] = _executar_padrao(
+            "coordenador",
+            lambda: (executar_coordenador(prompt_atual, role=papel_selecionado, exibir_metricas=False, run_id=run_coord), {}),
+            prompt_atual,
+            papel_selecionado,
+            run_coord,
+        )
+        etapa_atual += 1
 
-        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        kpi1.metric("Total de Execuções Coletadas", f"{total_consultas}")
-        kpi2.metric("Latência Média Geral", f"{latencia_global / 1000.0:.2f} s")
-        kpi3.metric("Custo Acumulado (FinOps)", f"R$ {custo_acumulado_brl:.4f}")
-        kpi4.metric("Conformidade RBAC Global", f"{rbac_global * 100:.1f}%")
+    if "plano_executor" in agentes_ativos:
+        barra_progresso.progress(
+            etapa_atual / total_etapas,
+            text=f"Etapa {etapa_atual + 1}/{total_etapas}: Processando Plano–Executor (LangGraph Fan-Out)...",
+        )
+        run_plano = f"arena_plano_{ts}"
+        resultados_rodada["plano_executor"] = _executar_padrao(
+            "plano_executor",
+            lambda: (executar_plano_executor(prompt_atual, role=papel_selecionado, exibir_metricas=False, run_id=run_plano), {}),
+            prompt_atual,
+            papel_selecionado,
+            run_plano,
+        )
+        etapa_atual += 1
 
-        st.divider()
+    if "conversa_grupo" in agentes_ativos:
+        barra_progresso.progress(
+            etapa_atual / total_etapas,
+            text=f"Etapa {etapa_atual + 1}/{total_etapas}: Processando Conversação em Grupo (AutoGen 0.4)...",
+        )
+        run_grupo = f"arena_grupo_{ts}"
 
-        # Monta DataFrame para os gráficos
-        dados_grafico = []
-        for padrao, op in resumo_op.items():
-            qual = resumo_qual.get(padrao, {})
-            dados_grafico.append({
-                "Padrão": padrao.replace("_", " ").title(),
-                "Latência Média (s)": round(op.get("latencia_media_ms", 0) / 1000.0, 2),
-                "Tokens Médios": int(op.get("tokens_medios", 0)),
-                "Custo Total (BRL)": round(op.get("custo_total_brl", 0), 4),
-                "Total Execuções": op.get("total_execucoes", 0),
-                "Fidelidade (%)": round(qual.get("fidelidade_media", 0.0) * 100, 1),
-                "Taxa Alucinação (%)": round(qual.get("taxa_alucinacao", 0.0) * 100, 1),
-                "Conformidade RBAC (%)": round(qual.get("rbac_conformidade_media", 1.0) * 100, 1),
-            })
+        def _exec_grupo() -> tuple[str, dict[str, Any]]:
+            res_g = executar_conversa_grupo(prompt_atual, papel=papel_selecionado, max_mensagens=9, run_id=run_grupo)
+            return res_g.get("resposta_final", ""), {"turnos": res_g.get("turnos", 0)}
 
-        df_metricas = pd.DataFrame(dados_grafico)
+        resultados_rodada["conversa_grupo"] = _executar_padrao(
+            "conversa_grupo",
+            _exec_grupo,
+            prompt_atual,
+            papel_selecionado,
+            run_grupo,
+        )
+        etapa_atual += 1
 
-        # Quatro Gráficos Plotly Comparativos
-        g_col1, g_col2 = st.columns(2)
-        with g_col1:
-            fig_lat = px.bar(
-                df_metricas,
-                x="Padrão",
-                y="Latência Média (s)",
-                text="Latência Média (s)",
-                title="⏱️ Comparativo Histórico de Latência Média (s)",
-                color="Padrão",
+    execucoes_db = {e["run_id"]: e for e in listar_execucoes(limite=20)}
+    run_ids_rodada: list[str] = []
+    for dados in resultados_rodada.values():
+        if dados.get("sucesso"):
+            rid = dados.get("run_id")
+            if rid:
+                run_ids_rodada.append(rid)
+            if rid in execucoes_db:
+                row = execucoes_db[rid]
+                dados["tokens"] = row["total_tokens"]
+                dados["custo_brl"] = row["custo_brl"]
+                dados["chamadas_mcp"] = row["chamadas_mcp"]
+                dados["chamadas_llm"] = row["chamadas_llm"]
+
+    barra_progresso.progress(1.0, text="Processamento concluído.")
+    barra_progresso.empty()
+    st.session_state.ultima_rodada = {
+        "sessao_id": run_ids_rodada[0] if run_ids_rodada else f"sess_{ts}",
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        "pergunta": prompt_atual,
+        "papel": papel_selecionado,
+        "resultados": resultados_rodada,
+        "run_ids": run_ids_rodada,
+    }
+    st.rerun()
+
+
+# ----------------------------------------------------------------------
+# 5. CONTEÚDO DA CONVERSA SELECIONADA (RESPOSTAS + DASH DA CONVERSA + SPANS)
+# ----------------------------------------------------------------------
+if st.session_state.ultima_rodada:
+    rodada = st.session_state.ultima_rodada
+    res = rodada["resultados"]
+
+    # Banner de identificação da conversa ativa
+    with st.container(border=True, horizontal=True, horizontal_alignment="distribute", vertical_alignment="center", wrap=True):
+        st.markdown(f"**Conversa selecionada:** {rodada['pergunta']}")
+        with st.container(horizontal=True, vertical_alignment="center", wrap=True):
+            if rodada.get("timestamp"):
+                st.badge(f"Data: {rodada['timestamp']}", color="gray")
+            st.badge(f"Perfil RBAC: {rodada['papel'].upper()}", color="violet")
+
+    # 5.1 Respostas empilhadas de cada padrão para esta conversa
+    for chave in agentes_ativos:
+        if chave in res:
+            _render_painel_agente_empilhado(chave, res[chave], rodada["papel"])
+
+    # 5.2 Dashboard & Tabela Comparativa desta Conversa
+    dados_rodada = [
+        {
+            "Padrão": CATALOGO_PADROES[k]["titulo"],
+            "Latência (s)": d.get("latencia_s", 0),
+            "Tokens": d.get("tokens", 0),
+            "Custo (BRL)": round(d.get("custo_brl", 0.0), 4),
+            "Fidelidade (%)": round(d.get("fidelidade", 0.0) * 100, 1),
+            "Taxa Alucinação (%)": 100.0 if d.get("alucinacao") else 0.0,
+            "Conformidade RBAC (%)": 100.0 if d.get("rbac_ok") else 0.0,
+        }
+        for k, d in res.items()
+        if d.get("sucesso") and k in CATALOGO_PADROES
+    ]
+
+    if dados_rodada:
+        df_rodada = pd.DataFrame(dados_rodada)
+        st.subheader("Dashboard & Métricas Comparativas da Conversa")
+
+        def _conv_latencia() -> None:
+            fig = px.bar(
+                df_rodada, x="Padrão", y="Latência (s)", text="Latência (s)",
+                title="Latência por Padrão nesta Conversa (s)", color="Padrão", color_discrete_map=CORES_PADROES,
             )
-            fig_lat.update_traces(textposition="outside")
-            st.plotly_chart(fig_lat, use_container_width=True)
+            fig.update_traces(textposition="outside", textangle=0, cliponaxis=False)
+            fig.update_layout(height=280, margin=dict(l=10, r=10, t=45, b=10), showlegend=False, xaxis_title=None)
+            st.plotly_chart(fig, use_container_width=True)
 
-        with g_col2:
-            fig_fin = px.bar(
-                df_metricas,
-                x="Padrão",
-                y="Tokens Médios",
-                text="Tokens Médios",
-                title="🪙 Consumo Médio de Tokens por Consulta",
-                color="Padrão",
+        def _conv_tokens() -> None:
+            fig = px.bar(
+                df_rodada, x="Padrão", y="Tokens", text="Tokens",
+                title="Consumo de Tokens nesta Conversa", color="Padrão", color_discrete_map=CORES_PADROES,
             )
-            fig_fin.update_traces(textposition="outside")
-            st.plotly_chart(fig_fin, use_container_width=True)
+            fig.update_traces(textposition="outside", textangle=0, cliponaxis=False)
+            fig.update_layout(height=280, margin=dict(l=10, r=10, t=45, b=10), showlegend=False, xaxis_title=None)
+            st.plotly_chart(fig, use_container_width=True)
 
-        g_col3, g_col4 = st.columns(2)
-        with g_col3:
-            fig_qual = px.bar(
-                df_metricas,
+        def _conv_qualidade() -> None:
+            fig = px.bar(
+                df_rodada,
                 x="Padrão",
                 y=["Fidelidade (%)", "Taxa Alucinação (%)"],
                 barmode="group",
-                title="🎯 Qualidade Semântica: Fidelidade vs. Alucinação",
-                color_discrete_map={"Fidelidade (%)": "#2ca02c", "Taxa Alucinação (%)": "#d62728"},
+                title="Qualidade Semântica: Fidelidade vs. Alucinação (%)",
+                color_discrete_map={"Fidelidade (%)": "#10B981", "Taxa Alucinação (%)": "#EF4444"},
             )
-            st.plotly_chart(fig_qual, use_container_width=True)
+            fig.update_layout(height=280, margin=dict(l=10, r=10, t=45, b=10), xaxis_title=None)
+            st.plotly_chart(fig, use_container_width=True)
 
-        with g_col4:
-            fig_rbac = px.bar(
-                df_metricas,
-                x="Padrão",
-                y="Conformidade RBAC (%)",
-                text="Conformidade RBAC (%)",
-                title="🛡️ Taxa de Conformidade de Isolamento RBAC (%)",
-                color="Padrão",
+        def _conv_rbac() -> None:
+            fig = px.bar(
+                df_rodada, x="Padrão", y="Conformidade RBAC (%)", text="Conformidade RBAC (%)",
+                title="Conformidade RBAC nesta Conversa (%)", color="Padrão", color_discrete_map=CORES_PADROES,
             )
-            fig_rbac.update_traces(textposition="outside")
-            fig_rbac.update_yaxes(range=[0, 115])
-            st.plotly_chart(fig_rbac, use_container_width=True)
+            fig.update_traces(textposition="outside", textangle=0, cliponaxis=False)
+            fig.update_yaxes(range=[0, 115])
+            fig.update_layout(height=280, margin=dict(l=10, r=10, t=45, b=10), showlegend=False, xaxis_title=None)
+            st.plotly_chart(fig, use_container_width=True)
 
-        st.markdown("#### 📋 Matriz Comparativa Consolidada")
-        st.dataframe(df_metricas, use_container_width=True, hide_index=True)
+        def _conv_finops() -> None:
+            fig = px.bar(
+                df_rodada, x="Padrão", y="Custo (BRL)", text="Custo (BRL)",
+                title="Custo Financeiro nesta Conversa (R$)", color="Padrão", color_discrete_map=CORES_PADROES,
+            )
+            fig.update_traces(texttemplate="R$ %{text:.4f}", textposition="outside", textangle=0, cliponaxis=False)
+            fig.update_layout(height=280, margin=dict(l=10, r=10, t=45, b=10), showlegend=False, xaxis_title=None)
+            st.plotly_chart(fig, use_container_width=True)
 
+        def _conv_volume() -> None:
+            fig = px.pie(
+                df_rodada, names="Padrão", values="Tokens",
+                title="Proporção de Tokens na Conversa", hole=0.45,
+                color="Padrão", color_discrete_map=CORES_PADROES,
+            )
+            fig.update_layout(height=280, margin=dict(l=10, r=10, t=45, b=10))
+            st.plotly_chart(fig, use_container_width=True)
 
-# ======================================================================
-# ABA 3: AUDITORIA & SPANS (INSPEÇÃO PROFUNDA)
-# ======================================================================
-with tab_auditoria:
-    st.header("Inspeção de Spans e Auditoria de Execuções")
-    st.markdown("Visualize o histórico individual de chamadas, tempos por nó e consultas ao servidor MCP.")
+        mapa_paineis_conv = {
+            "Latência por Padrão": _conv_latencia,
+            "Consumo de Tokens": _conv_tokens,
+            "Fidelidade vs. Alucinação": _conv_qualidade,
+            "Conformidade RBAC": _conv_rbac,
+            "Custo Acumulado (FinOps)": _conv_finops,
+            "Distribuição de Execuções": _conv_volume,
+        }
 
-    todas_execucoes = [e for e in listar_execucoes(limite=50) if "simulada" not in str(e.get("resposta_final", ""))]
+        paineis_conv_ativos = [mapa_paineis_conv[nome] for nome in modulos_dash_ativos if nome in mapa_paineis_conv]
+        renderizar_grid_dinamico(paineis_conv_ativos, colunas_por_linha=colunas_dashboard, gap="medium", borda_celula=True)
 
-    if not todas_execucoes:
-        st.info("Nenhuma execução real disponível para auditoria.")
-    else:
-        df_todas = pd.DataFrame(todas_execucoes)
-        col_exibir = [
-            "run_id", "padrao_arquitetural", "pergunta", "papel_usuario",
-            "latencia_total_ms", "total_tokens", "custo_brl", "sucesso", "timestamp_inicio"
-        ]
-        col_existentes = [c for c in col_exibir if c in df_todas.columns]
+        with st.container(border=True):
+            st.subheader("Tabela Comparativa da Conversa")
+            st.dataframe(df_rodada, width="stretch", hide_index=True)
 
-        st.dataframe(df_todas[col_existentes], use_container_width=True, hide_index=True)
+    # 5.3 Inspetor de Spans & Evidências MCP (exclusivo da conversa selecionada)
+    runs_sessao_atual = [
+        (chave, dados_p)
+        for chave, dados_p in res.items()
+        if chave in CATALOGO_PADROES and dados_p.get("run_id")
+    ]
+    if runs_sessao_atual:
+        with st.container(border=True):
+            st.subheader("Inspetor de Spans & Evidências MCP")
+            mapa_sessao = {
+                dados_p["run_id"]: (chave, dados_p)
+                for chave, dados_p in runs_sessao_atual
+            }
+            opcoes_runs = list(mapa_sessao.keys())
 
-        st.divider()
-        st.markdown("#### 🔍 Investigador de Spans por `run_id`")
-        
-        opcoes_runs = [e["run_id"] for e in todas_execucoes]
-        run_selecionado = st.selectbox("Selecione uma execução para ver a árvore de spans:", options=opcoes_runs)
+            col_sel, col_btn = st.columns([4, 1], vertical_alignment="bottom")
+            with col_sel:
+                run_selecionado = st.selectbox(
+                    "Selecione o agente desta conversa para inspecionar etapas internas e evidências",
+                    options=opcoes_runs,
+                    format_func=lambda rid: CATALOGO_PADROES[mapa_sessao[rid][0]]["titulo"],
+                )
+            chave_sel, dados_sel = mapa_sessao[run_selecionado]
+            with col_btn:
+                if st.button("Abrir em Modal Completo", key="btn_modal_audit", use_container_width=True):
+                    abrir_modal_inspecao(
+                        run_selecionado,
+                        CATALOGO_PADROES[chave_sel]["titulo"],
+                        str(rodada.get("papel", "")),
+                        str(dados_sel.get("resposta", "")),
+                    )
 
-        if run_selecionado:
-            with sqlite3.connect(CAMINHO_BANCO_PADRAO) as conn:
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
-                c.execute("SELECT * FROM spans WHERE run_id = ? ORDER BY timestamp_inicio ASC", (run_selecionado,))
-                spans_linhas = [dict(r) for r in c.fetchall()]
-
+            spans_linhas = _buscar_spans_execucao(run_selecionado)
             if not spans_linhas:
                 st.caption("Nenhum sub-span específico registrado para esta execução.")
             else:
                 df_spans = pd.DataFrame(spans_linhas)
-                st.dataframe(df_spans[["span_id", "nome_span", "tipo", "duracao_ms", "timestamp_inicio"]], use_container_width=True, hide_index=True)
-                
-                fig_spans = px.bar(
-                    df_spans,
-                    x="duracao_ms",
-                    y="nome_span",
-                    orientation="h",
-                    title=f"Tempo Gasto por Etapa / Nó (ms) — {run_selecionado}",
-                    labels={"duracao_ms": "Duração (ms)", "nome_span": "Etapa / Nó"},
-                    color="tipo",
-                )
-                st.plotly_chart(fig_spans, use_container_width=True)
+                col_grafico_sp, col_tabela_sp = st.columns([3, 2], gap="medium")
+                with col_grafico_sp:
+                    fig_spans = px.bar(
+                        df_spans,
+                        x="duracao_ms",
+                        y="nome_span",
+                        orientation="h",
+                        title=f"Duração por Etapa / Nó (ms) · {CATALOGO_PADROES[chave_sel]['titulo']}",
+                        labels={"duracao_ms": "Duração (ms)", "nome_span": "Etapa"},
+                        color="tipo",
+                    )
+                    fig_spans.update_layout(height=260, margin=dict(l=10, r=10, t=35, b=10))
+                    st.plotly_chart(fig_spans, use_container_width=True)
+                with col_tabela_sp:
+                    st.dataframe(
+                        df_spans[["nome_span", "tipo", "duracao_ms"]],
+                        width="stretch",
+                        hide_index=True,
+                        height=260,
+                    )
+else:
+    st.info("Digite uma pergunta acima ou selecione uma conversa na barra lateral esquerda para visualizar os resultados, gráficos e spans.")
