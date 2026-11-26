@@ -121,15 +121,14 @@ def test_plano_executor_geral_nao_vaza_projeto_secreto():
     assert any(
         termo in resposta
         for termo in (
+            "no authorized information",
+            "no documents found",
+            "access profile",
             "não constam",
             "nao constam",
             "não foram encontrad",
             "nao foram encontrad",
             "nenhum documento",
-            "disponíveis",
-            "disponiveis",
-            "registros",
-            "perfil",
         )
     )
 

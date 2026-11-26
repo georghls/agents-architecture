@@ -27,11 +27,16 @@ NOME_FERRAMENTA_MCP = "buscar_documentos_corporativos"
 TIMEOUT_SEGUNDOS = 60.0
 
 RESPOSTA_PADRAO_SEM_ACESSO = (
-    "Não constam informações autorizadas sobre este tema "
-    "disponíveis para consulta no seu perfil de acesso."
+    "No authorized information on this topic is available for your access profile."
 )
 
 _MARCADORES_SEM_ACESSO = (
+    "no authorized information",
+    "no documents found",
+    "no relevant records",
+    "not authorized to access",
+    "irrelevantes para o tema",
+    "irrelevant to the topic",
     "não constam registros",
     "nao constam registros",
     "não constam informações",
@@ -41,16 +46,22 @@ _MARCADORES_SEM_ACESSO = (
     "não há informações autorizadas",
     "não há registros autorizados",
     "nenhum documento encontrado na base corporativa",
-    "irrelevantes para o tema",
 )
 
 
 def padronizar_resposta_sem_acesso(texto: str) -> str:
-    """Padroniza respostas de ausência de registros ou bloqueio RBAC entre os agentes."""
-    texto_lower = texto.lower()
+    """Padroniza respostas de ausência de registros ou bloqueio RBAC entre os agentes.
+
+    Só substitui pela frase padrão quando a resposta inteira for uma recusa curta
+    (evita apagar respostas válidas que trazem evidências parciais e uma ressalva no final).
+    """
+    texto_limpo = (texto or "").strip()
+    if len(texto_limpo) > 260:
+        return texto
+    texto_lower = texto_limpo.lower()
     if any(marcador in texto_lower for marcador in _MARCADORES_SEM_ACESSO) or (
-        "perfil de acesso" in texto_lower
-        and ("não " in texto_lower or "nao " in texto_lower or "nenhum" in texto_lower)
+        ("perfil de acesso" in texto_lower or "access profile" in texto_lower)
+        and ("não " in texto_lower or "nao " in texto_lower or "nenhum" in texto_lower or "no " in texto_lower or "not " in texto_lower)
     ):
         return RESPOSTA_PADRAO_SEM_ACESSO
     return texto
@@ -62,9 +73,6 @@ _VARIAVEIS_REPASSADAS = ("DATABASE_URL", "GEMINI_API_KEY", "AUTH_SECRET_KEY")
 def parametros_servidor(role: str | None = None, token: str | None = None) -> StdioServerParameters:
     """Como iniciar o servidor MCP como subprocesso stdio com credencial JWT (A-05)."""
     env = get_default_environment()
-    for nome in _VARIAVEIS_REPASSADAS:
-        if os.environ.get(nome):
-            env[nome] = os.environ[nome]
 
     if token:
         env["MCP_AUTH_TOKEN"] = token
@@ -72,6 +80,10 @@ def parametros_servidor(role: str | None = None, token: str | None = None) -> St
         env["MCP_AUTH_TOKEN"] = gerar_token_sessao(papel=role)
     elif os.environ.get("MCP_AUTH_TOKEN"):
         env["MCP_AUTH_TOKEN"] = os.environ["MCP_AUTH_TOKEN"]
+
+    for nome in _VARIAVEIS_REPASSADAS:
+        if os.environ.get(nome):
+            env[nome] = os.environ[nome]
 
     return StdioServerParameters(
         command=sys.executable,
@@ -93,9 +105,9 @@ async def _executar_call_tool_no_cliente(cliente: Client, query: str) -> str:
     )
     texto = _texto_do_resultado(resultado)
     if resultado.is_error:
-        print(f"[Cliente MCP] Ferramenta retornou erro: {texto}", file=sys.stderr)
-        return "Erro MCP: a ferramenta de busca falhou; nenhum documento foi retornado."
-    return texto or "Erro MCP: resposta vazia do servidor."
+        print(f"[MCP Client] Tool returned an error: {texto}", file=sys.stderr)
+        return "MCP Error: the search tool failed; no documents were returned."
+    return texto or "MCP Error: empty response from server."
 
 
 class _SessaoMCPCompartilhada:
@@ -227,16 +239,16 @@ async def consultar_mcp_async(query: str, role: str, alvo: Any = None) -> str:
                 trace.registrar_evidencia_mcp(resposta)
                 return resposta
             except Exception as erro:  # noqa: BLE001 - transporte/SDK podem lançar classes variadas
-                print(f"[Cliente MCP] Falha ao consultar o servidor (async): {erro!r}", file=sys.stderr)
-                msg_erro = "Erro MCP: não foi possível consultar o servidor de documentos."
+                print(f"[MCP Client] Failed to query server (async): {erro!r}", file=sys.stderr)
+                msg_erro = "MCP Error: could not query the document server."
                 span_ctx.detalhes["evidencia"] = msg_erro
                 trace.registrar_evidencia_mcp(msg_erro)
                 return msg_erro
     try:
         return await _chamar_mcp(alvo, query, role=role)
     except Exception as erro:  # noqa: BLE001 - transporte/SDK podem lançar classes variadas
-        print(f"[Cliente MCP] Falha ao consultar o servidor (async): {erro!r}", file=sys.stderr)
-        return "Erro MCP: não foi possível consultar o servidor de documentos."
+        print(f"[MCP Client] Failed to query server (async): {erro!r}", file=sys.stderr)
+        return "MCP Error: could not query the document server."
 
 
 def consultar_mcp(query: str, role: str, alvo: Any = None) -> str:
@@ -268,13 +280,13 @@ def criar_ferramenta_busca(role: str) -> BaseTool:
     @tool("ferramenta_busca_corporativa")
     def ferramenta_busca_corporativa(query: str) -> str:
         """
-        Busca documentos corporativos internos na base de dados da empresa.
-        Use esta ferramenta SEMPRE que precisar responder a perguntas sobre
-        projetos da empresa, orçamentos, regras internas ou documentos em geral.
+        Search internal corporate documents in the company's knowledge base.
+        ALWAYS use this tool when answering questions about company projects,
+        budgets, internal rules, technical manuals, contracts, or financial reports.
         """
-        print(f"\n[Ferramenta MCP] Pesquisando por '{query}' com permissão de '{papel_da_sessao}'...")
+        print(f"\n[MCP Tool] Searching for '{query}' with '{papel_da_sessao}' permissions...")
         resultado = consultar_mcp(query, papel_da_sessao)
-        print(f"[Ferramenta MCP] Resultado retornado: {resultado}\n")
+        print(f"[MCP Tool] Returned result: {resultado}\n")
         return resultado
 
     return ferramenta_busca_corporativa
@@ -296,21 +308,21 @@ def criar_ferramenta_autogen(role: str, alvo: Any = None) -> FunctionTool:
     papel_da_sessao = role.strip()
 
     async def buscar_documentos_corporativos(query: str) -> str:
-        """Busca documentos corporativos internos na base de dados da empresa.
-        Use esta ferramenta SEMPRE que precisar responder a perguntas sobre
-        projetos da empresa, orçamentos, regras internas ou documentos em geral.
+        """Search internal corporate documents in the company's knowledge base.
+        ALWAYS use this tool when answering questions about company projects,
+        budgets, internal rules, technical manuals, contracts, or financial reports.
         """
-        print(f"\n[AutoGen MCP Tool] Pesquisando por '{query}' com permissão de '{papel_da_sessao}'...")
+        print(f"\n[AutoGen MCP Tool] Searching for '{query}' with '{papel_da_sessao}' permissions...")
         resultado = await consultar_mcp_async(query, papel_da_sessao, alvo=alvo)
-        print(f"[AutoGen MCP Tool] Retorno: {resultado[:100]}...\n")
+        print(f"[AutoGen MCP Tool] Returned: {resultado[:100]}...\n")
         return resultado
 
     return FunctionTool(
         buscar_documentos_corporativos,
         description=(
-            "Busca documentos corporativos internos na base de dados da empresa. "
-            "Use esta ferramenta SEMPRE que precisar responder a perguntas sobre "
-            "projetos, orçamentos, regras internas ou documentação corporativa."
+            "Search internal corporate documents in the company's knowledge base. "
+            "ALWAYS use this tool when answering questions about projects, budgets, "
+            "internal policies, technical manuals, contracts, or financial reports."
         ),
     )
 

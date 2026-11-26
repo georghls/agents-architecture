@@ -382,6 +382,37 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Consequências e riscos: Os três padrões passam a refletir integralmente a literatura de Engenharia de IA e os diagramas da Fase 1, sem adicionar chamadas extras de LLM no caminho feliz.
 - Como verificar: Executar `python -m pytest -m "not llm" -v` validando os novos testes de citação estruturada, revogação documental, replanejamento limitado, nó validador do coordenador e auditoria de consenso no AutoGen.
 
+### D-026 — Integração de Documentos Corporativos Robustos do Benchmark Público `galileo-ai/ragbench` (`rungalileo/ragbench`) Mapeados para Perfis RBAC (2026-11-24)
+
+- Status: aceito
+- Contexto: Para avaliar os três padrões multiagentes (Coordenador, Plano–Executor e Conversação em Grupo) sobre documentos corporativos densos e extensos da literatura internacional de LLMOps e RAG (framework TRACe), selecionou-se o benchmark público **`galileo-ai/ragbench`** (originalmente publicado como `rungalileo/ragbench` no Hugging Face), descartando resumos sintéticos simplificados (como os rascunhos da TOTVS). O objetivo é trabalhar com documentos robustos (10 KB a 30 KB por arquivo, subdivididos em múltiplos chunks semânticos de até 700 caracteres) que exijam recuperação precisa e síntese multi-trecho sob controle de acesso RBAC via MCP.
+- Decisão:
+  1. Implementar o módulo `src/ingestao/ragbench_loader.py`, que consome via HTTPS a API REST oficial do Hugging Face Datasets Server (`datasets-server.huggingface.co`, repositório `galileo-ai/ragbench`) sem dependências nativas C++.
+  2. Estruturar o mapeamento de três domínios corporativos densos do RAGBench para os papéis RBAC do servidor MCP:
+     - **`techqa` $\rightarrow$ perfil `geral`**: conjuntos completos de 5 documentos técnicos corporativos da IBM (*Technotes* de suporte, arquitetura e engenharia de software, ~15 KB a 25 KB por arquivo).
+     - **`cuad` $\rightarrow$ perfil `rh`**: contratos corporativos e acordos jurídicos reais (*Software License, Non-Compete, IP Ownership Assignment*, ~12 KB a 18 KB por arquivo com múltiplos blocos contratuais estruturados em parágrafos para particionamento semântico).
+     - **`finqa` $\rightarrow$ perfil `diretoria`**: relatórios financeiros corporativos completos, notas explicativas de M&A, tabelas patrimoniais e cálculos de retorno de investimento.
+  3. Formatar os documentos a partir das sentenças estruturadas (`documents_sentences`) agrupadas em parágrafos de ~500 caracteres separados por linha em branco (`\n\n`), garantindo que `segmentar_documento` em `src/ingestao/ingestao.py` divida arquivos de 15 KB–25 KB em dezenas de chunks granulares de ~600–700 caracteres cada.
+  4. Selecionar casos validados com `adherence_score == True`, gerando os arquivos em `data/documentos/{geral,rh,diretoria}/ragbench_<subset>_<id>.md` e o gabarito `data/ragbench_golden_dataset.json` (incluindo consultas autorizadas e pares espelhados de bloqueio RBAC sob perfil `geral`).
+- Alternativas consideradas:
+  - Resumos curtos de políticas da TOTVS (~3 KB): descartados a pedido do autor por serem simples demais frente aos documentos originais do RAGBench.
+  - Ingerir o dataset `ragbench` integral (>100.000 linhas): descartado por inviabilidade de tempo e limites de taxa (HTTP 429) na API gratuita de embeddings.
+- Consequências e riscos: Aumenta substancialmente a densidade e o número de chunks por documento no Supabase (`pgvector`), tornando o desafio de recuperação Top-K e síntese multiagente muito mais próximo de um ambiente corporativo real.
+- Como verificar: Executar `python -m src.ingestao.ragbench_loader --por-dominio 3 --ingerir` e validar com `python -m pytest tests/test_ragbench.py tests/test_golden_dataset.py -v`.
+
+### D-027 — Padronização do Pipeline Operacional (Agentes, MCP, Juiz LLM, Gabaritos e UI) em Língua Inglesa (2026-11-24)
+
+- Status: aceito
+- Contexto: Com a adoção do **`galileo-ai/ragbench`** (`techqa`, `cuad`, `finqa`) como corpus principal do estudo, observou-se *cross-lingual retrieval drift* quando agentes geravam queries em português para buscar documentos em inglês no `pgvector`, além de falsos negativos no avaliador determinístico ao traduzir termos técnicos/jurídicos do gabarito para português.
+- Decisão:
+  1. Padronizar integralmente em **Inglês (EN)** os prompts e saídas dos três padrões arquiteturais (`src/agentes/coordenador.py`, `plano_executor.py`, `conversa_grupo.py`), as mensagens do servidor MCP (`src/mcp/server.py`) e do cliente (`src/agentes/mcp_toolkit.py`), o prompt do Juiz LLM (`src/observabilidade/avaliador.py`), a interface Streamlit (`src/ui/app.py`) e o gabarito `data/golden_dataset.json`.
+  2. Reiniciar o banco de telemetria SQLite (`data/telemetria.db`) limpo para que o novo histórico de benchmark seja coletado exclusivamente sob a configuração padronizada em inglês, sem misturar métricas da fase anterior em português.
+  3. Manter toda a documentação acadêmica do projeto (`docs/*.md`) em **Português (PT-BR)**, conforme o idioma do estudo dirigido na UNICAMP.
+- Alternativas consideradas:
+  - Manter prompts bilíngues ou traduzir os documentos do `ragbench` para português: descartado por introduzir ruído de tradução nas cláusulas jurídicas (`cuad`) e financeiras (`finqa`) e perder comparabilidade direta com os textos originais do benchmark.
+- Consequências e riscos: Elimina o descompasso linguístico entre queries, chunks recuperados, respostas dos agentes e avaliação automatizada, mantendo a interface e a telemetria coerentes com o corpus principal.
+- Como verificar: Executar `python -m pytest tests/test_golden_dataset.py tests/test_ragbench.py tests/test_avaliador.py tests/test_observabilidade.py tests/test_mcp_toolkit.py tests/resiliencia/ -v` e verificar a inicialização limpa de `data/telemetria.db` e da interface Streamlit (`src/ui/app.py`).
+
 ## Modelo para novas entradas
 
 ```md

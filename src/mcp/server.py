@@ -8,9 +8,9 @@ from src.autorizacao.tokens import ErroAutorizacao, validar_token_sessao
 from src.busca.embeddings import get_embedding
 from src.config import url_banco
 
-MENSAGEM_SEM_RESULTADO = "Nenhum documento encontrado nos registros autorizados para o seu perfil."
-MENSAGEM_ERRO_AUTH = "Erro MCP: Sessão não autenticada ou token de identidade inválido. Acesso negado."
-MENSAGEM_ERRO_SISTEMA = "Erro interno no servidor de documentos: falha temporária de infraestrutura."
+MENSAGEM_SEM_RESULTADO = "No documents found in authorized records for your access profile."
+MENSAGEM_ERRO_AUTH = "MCP Error: Unauthenticated session or invalid identity token. Access denied."
+MENSAGEM_ERRO_SISTEMA = "Internal document server error: temporary infrastructure failure."
 LIMIAR_DISTANCIA = 0.60  # Nota de corte: distância máxima aceitável para considerar um documento relevante
 TOP_K_PADRAO = 3  # Número máximo de trechos relevantes retornados (D-022)
 
@@ -44,7 +44,7 @@ def _formatar_citacao(
     if chunk_id is not None and str(chunk_id).strip():
         partes.append(f"chunk {chunk_id}")
     ref = " | ".join(partes)
-    return f" [{ref}]" if formato_curto else f" (Origem: {ref})"
+    return f" [{ref}]" if formato_curto else f" (Source: {ref})"
 
 
 def _desempacotar_linha_resultado(linha: tuple) -> tuple[str, str | None, str | None, str | int | None, float]:
@@ -106,7 +106,7 @@ def buscar_no_banco(pergunta: str, top_k: int = TOP_K_PADRAO) -> str:
                 if len(resultados) == 1:
                     conteudo, doc_origem, versao_doc, chunk_id, _ = _desempacotar_linha_resultado(resultados[0])
                     origem_str = _formatar_citacao(doc_origem, versao_doc, chunk_id, formato_curto=True)
-                    return f"Documento encontrado{origem_str}: {conteudo}"
+                    return f"Document found{origem_str}: {conteudo}"
                 
                 trechos = []
                 for i, linha in enumerate(resultados, 1):
@@ -114,9 +114,9 @@ def buscar_no_banco(pergunta: str, top_k: int = TOP_K_PADRAO) -> str:
                     origem_str = _formatar_citacao(doc_origem, versao_doc, chunk_id, formato_curto=False)
                     trechos.append(f"[{i}]{origem_str}\n{conteudo}")
                 
-                return f"Documentos encontrados ({len(resultados)} trechos autorizados):\n\n" + "\n\n".join(trechos)
+                return f"Documents found ({len(resultados)} authorized excerpts):\n\n" + "\n\n".join(trechos)
     except Exception as erro:
-        print(f"[Servidor MCP] Erro de infraestrutura ao buscar no banco: {erro}", file=sys.stderr)
+        print(f"[MCP Server] Infrastructure error while querying database: {erro}", file=sys.stderr)
         return MENSAGEM_ERRO_SISTEMA
 
 
@@ -124,8 +124,8 @@ def buscar_no_banco(pergunta: str, top_k: int = TOP_K_PADRAO) -> str:
 @mcp.tool()
 def buscar_documentos_corporativos(pergunta: str) -> str:
     """
-    Busca documentos na base de conhecimento da empresa usando Inteligência Artificial.
-    A identidade e as permissões de acesso são validadas de forma confiável via token JWT da sessão MCP.
+    Search corporate knowledge base documents using semantic vector retrieval.
+    User identity and RBAC permissions are verified cryptographically via the MCP session JWT.
     """
     return buscar_no_banco(pergunta)
 

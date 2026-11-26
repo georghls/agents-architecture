@@ -127,7 +127,7 @@ def test_auditoria_consenso_e_bloqueio_quando_validador_reprova_vazamento():
 
     resposta_segura = _extrair_resposta_final(mensagens, papel="geral")
     assert "50 milhões" not in resposta_segura
-    assert "não constam" in resposta_segura.lower()
+    assert "no authorized information" in resposta_segura.lower() or "não constam" in resposta_segura.lower()
 
 
 @pytest.mark.anyio
