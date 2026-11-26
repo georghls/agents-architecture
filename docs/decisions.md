@@ -20,19 +20,19 @@ Use entradas curtas com data, contexto, escolha, alternativas, consequência e s
 | C-04 | Compartilhar o mesmo MCP e a mesma base nas três implementações | Preservar permissões e contratos de evidência |
 | C-05 | Autor concluiu o desenho visual da Fase 1 | Diagramas dos três padrões recebidos e transcritos em `diagramas/`; desenho da arquitetura geral ainda não recebido |
 
-## Questões para concluir a Fase 2
+## Questões arquiteturais da Fase 2 (Resolvidas)
 
-A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. As escolhas definitivas de persistência, identidade e implantação continuam abertas.
+As questões levantadas no início da Fase 2 foram resolvidas progressivamente ao longo das decisões `D-004` a `D-026`:
 
-| ID | Questão | Critério de escolha |
+| ID | Questão | Status / Resolução |
 |---|---|---|
-| A-01 | Linguagem e framework do backend | Aprendizado, integração, ambiente local |
-| A-02 | Versão do SDK e transporte MCP | Compatibilidade com cliente e identidade |
-| A-03 | Tipo de banco, índice vetorial e armazenamento de originais | Simplicidade local, persistência, acesso e reversibilidade |
-| A-04 | Modelo de embeddings e geração | Qualidade, custo, privacidade, disponibilidade |
-| A-05 | Política de acesso e identidade para protótipo | Resolvido em D-011 via JWT assinado (HS256) na sessão MCP |
-| A-06 | Formato do corpus, chunking e versões | Rastreabilidade e atualização de documentos |
-| A-07 | Interface, dashboard e implantação | Compatibilidade com prazo acadêmico |
+| A-01 | Linguagem e framework do backend | Resolvido — Python `>= 3.10`, `LangGraph` + `Microsoft AutoGen 0.4+` (`D-002`, `D-012`, `D-013`) |
+| A-02 | Versão do SDK e transporte MCP | Resolvido — SDK oficial `mcp>=2.1.1` via transporte `stdio` (`D-007`, `D-008`, `D-024`) |
+| A-03 | Tipo de banco, índice vetorial e armazenamento de originais | Resolvido — PostgreSQL + `pgvector` unificado no Supabase (`D-004`, `D-005`) |
+| A-04 | Modelo de embeddings e geração | Resolvido — Google Gemini (`models/gemini-embedding-2` + `gemini-flash-lite-latest`, `D-006`, `D-024`) |
+| A-05 | Política de acesso e identidade para protótipo | Resolvido — JWT assinado (`HS256`) na sessão MCP + whitelist RBAC (`D-011`, `D-023`) |
+| A-06 | Formato do corpus, chunking e versões | Resolvido — Markdown estruturado + `galileo-ai/ragbench`, chunking semântico, `status='published'` e revogação (`D-022`, `D-025`, `D-026`) |
+| A-07 | Interface, dashboard e implantação | Resolvido — Gerenciador de Agentes e Dashboard de LLMOps em Streamlit + Plotly + SQLite (`D-015`, `D-020`, `D-021`) |
 
 ## Decisões sobre os diagramas recebidos
 
@@ -287,7 +287,7 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Consequências e riscos: Permite que o professor ou a banca avaliadora execute a aplicação com um único comando (`streamlit run src/ui/app.py`), acessando todos os entregáveis do projeto em uma experiência fluida no navegador.
 - Como verificar: Inicializar a aplicação Streamlit no terminal e validar a renderização das abas, a execução dos agentes com telemetria e a atualização dos gráficos Plotly.
 
-### D-021 — Dashboard em Modo 'Arena Comparativa' com Execução Simultânea dos Três Padrões (2026-11-04)
+### D-021 — Dashboard em Modo 'Gerenciador de Agentes' com Execução Simultânea dos Três Padrões (2026-11-04)
 
 - Status: aceito
 - Contexto: No design original da interface, o usuário precisava escolher previamente um único agente no selectbox para rodar a pergunta. No entanto, o objetivo central da pesquisa acadêmica é comparar experimentalmente o comportamento dos três padrões (Coordenador, Plano–Executor e Conversação em Grupo) diante da mesma pergunta e sob o mesmo perfil RBAC. Selecionar um agente por vez gerava atrito e impedia a visualização comparativa imediata das métricas.
@@ -321,7 +321,7 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Como verificar:
   - Execução de `python -m src.ingestao.ingestao` indexando os arquivos sem erros.
   - Execução dos testes automatizados (`pytest -v`) validando retrocompatibilidade.
-  - Consulta via cliente MCP (`python scripts/cliente.py`) e visualização na Arena Streamlit (`streamlit run src/ui/app.py`).
+  - Consulta via cliente MCP (`python scripts/cliente.py`) e visualização no Gerenciador de Agentes em Streamlit (`streamlit run src/ui/app.py`).
 
 ### D-023 — Endurecimento de Segurança (Security Hardening): Isolamento contra Indirect Prompt Injection, Gestão Criptográfica JWT, Whitelist RBAC e Políticas RLS (2026-11-04)
 
@@ -331,13 +331,13 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
   2. `src/config.py` possuía um fallback estático e público para `AUTH_SECRET_KEY`, permitindo adivinhação de chave caso o `.env` não definisse o segredo.
   3. `src/autorizacao/tokens.py` não restringia os papéis a uma whitelist explícita (`geral`, `rh`, `diretoria`) nem validava o tamanho mínimo de 256 bits (32 caracteres) da chave HMAC conforme a RFC 7518.
   4. `buscar_no_banco` em `src/mcp/server.py` aceitava um argumento opcional `papel_do_usuario`, permitindo bypass da leitura do token JWT em chamadas diretas.
-  5. `src/persistencia/setup_tabelas.py` habilitava Row Level Security (`ENABLE ROW LEVEL SECURITY`) sem políticas declaradas (`CREATE POLICY`), e a verificação de vazamento na Arena Streamlit checava apenas um termo isolado e omitia o perfil `rh`.
+  5. `src/persistencia/setup_tabelas.py` habilitava Row Level Security (`ENABLE ROW LEVEL SECURITY`) sem políticas declaradas (`CREATE POLICY`), e a verificação de vazamento no Gerenciador de Agentes em Streamlit checava apenas um termo isolado e omitia o perfil `rh`.
 - Decisão:
   1. **Separação Estrita Dados vs. Instruções (Mitigação de Indirect Prompt Injection):** Substituir `SystemMessage` por `HumanMessage` com delimitadores XML `<evidencia_mcp>...</evidencia_mcp>` no `pesquisador_node` (`src/agentes/coordenador.py`) e também em `src/agentes/plano_executor.py` e `src/agentes/conversa_grupo.py`, instruindo explicitamente os nós sintetizadores/redatores a tratar todo o interior de `<evidencia_mcp>` como dado passivo não confiável e nunca obedecer a comandos ali embutidos.
   2. **Eliminação de Chave Estática Previsível e Conformidade RFC 7518:** Remover a chave estática hardcoded de `src/config.py`. Se `AUTH_SECRET_KEY` não estiver definida no ambiente/`.env`, gerar uma chave efêmera criptograficamente segura via CSPRNG (`secrets.token_hex(32)`) por execução (ou falhar fechado quando `STRICT_AUTH=1`), exigindo sempre comprimento mínimo de 32 caracteres (256 bits) tanto em `src/config.py` quanto em `src/autorizacao/tokens.py`.
   3. **Whitelist Estrita de Papéis RBAC e Falha Fechada no Servidor MCP:** Restringir emissão e validação de JWT exclusivamente a `PAPEIS_PERMITIDOS = {"geral", "rh", "diretoria"}` e exigir as claims `sub`, `papel`, `iat` e `exp`. Remover o parâmetro de bypass `papel_do_usuario` de `buscar_no_banco` em `src/mcp/server.py`, obrigando 100% das consultas a extrair a identidade do token JWT validado (`obter_papel_da_sessao()`).
   4. **Políticas RLS Explícitas no PostgreSQL:** Adicionar políticas `CREATE POLICY` em `src/persistencia/setup_tabelas.py` baseadas em `metadados->>'papel'` e na variável de sessão `app.current_role`.
-  5. **Auditoria RBAC Completa por Perfil:** Adicionar um mapa completo de segredos proibidos por papel (`obter_termos_proibidos_por_papel`) em `src/observabilidade/avaliador.py` e habilitar os três perfis (`geral`, `rh`, `diretoria`) na Arena Streamlit (`src/ui/app.py`).
+  5. **Auditoria RBAC Completa por Perfil:** Adicionar um mapa completo de segredos proibidos por papel (`obter_termos_proibidos_por_papel`) em `src/observabilidade/avaliador.py` e habilitar os três perfis (`geral`, `rh`, `diretoria`) no Gerenciador de Agentes (`src/ui/app.py`).
 - Alternativas consideradas:
   - Manter `SystemMessage` com apenas avisos textuais: descartado porque modelos de linguagem priorizam instruções em `SystemMessage` sobre regras anteriores.
   - Exigir configuração manual de `AUTH_SECRET_KEY` até mesmo em testes unitários offline: descartado em favor de geração CSPRNG efêmera em memória (gravada no `os.environ` do processo para propagação ao subprocesso MCP), que garante zero chave previsível sem quebrar o CI.
@@ -349,13 +349,13 @@ A D-002 fixa Python, SDK e transporte apenas para o primeiro incremento local. A
 - Status: aceito
 - Contexto: A revisão arquitetural identificou distorções metodológicas e funcionais que afetavam a validade empírica da comparação entre os três padrões multiagentes:
   1. `src/busca/embeddings.py` fixava `task_type="retrieval_document"` inclusive para perguntas dos usuários (deveria ser `retrieval_query` na busca) e utilizava o pacote depreciado `google.generativeai`.
-  2. O pipeline de benchmark (`scripts/executar_benchmark.py`) e a Arena Streamlit (`src/ui/app.py`) invocavam `avaliar_execucao` sem repassar o `contexto_mcp` recuperado, fazendo o Juiz LLM avaliar as respostas como se nenhum documento tivesse sido retornado.
+  2. O pipeline de benchmark (`scripts/executar_benchmark.py`) e o Gerenciador de Agentes (`src/ui/app.py`) invocavam `avaliar_execucao` sem repassar o `contexto_mcp` recuperado, fazendo o Juiz LLM avaliar as respostas como se nenhum documento tivesse sido retornado.
   3. No padrão Plano–Executor (`src/agentes/plano_executor.py`), as 3 subtarefas paralelas abriam 3 subprocessos Python independentes (`python -m src.mcp.server`) a cada pergunta em vez de compartilhar o mesmo servidor MCP conforme `D-001`, inflando artificialmente a latência por overhead de *cold boot* de processos no Windows.
   4. `src/agentes/coordenador.py` e `src/agentes/plano_executor.py` instanciavam `ChatGoogleGenerativeAI` no escopo global de importação (exigindo `GEMINI_API_KEY` mesmo em testes offline), não registravam spans individuais por nó no `TraceContexto` e não contabilizavam o custo de embeddings no FinOps.
   5. Na Conversação em Grupo (`src/agentes/conversa_grupo.py`), `max_mensagens=6` interrompia a conversa antes que o `analyst_agent` pudesse revisar a resposta caso o `validator_agent` solicitasse correção no 1º ciclo.
 - Decisão:
   1. **Embeddings Assimétricos e Migração para `google-genai`:** Atualizar `get_embedding(text, task_type="retrieval_document")` em `src/busca/embeddings.py` para usar o SDK oficial `google.genai` (`types.EmbedContentConfig(task_type=...)`), passando `task_type="retrieval_query"` nas consultas de `src/mcp/server.py` e `src/busca/recuperacao.py`.
-  2. **Propagação Automática de `contexto_mcp` para o Avaliador:** Registrar os trechos retornados pelo MCP diretamente no `TraceContexto` (`registrar_evidencia_mcp` / `obter_evidencias_execucao` em `src/observabilidade/telemetria.py`) durante a execução de `consultar_mcp_async`, e repassá-los ao `avaliar_execucao` no benchmark e na Arena Streamlit.
+  2. **Propagação Automática de `contexto_mcp` para o Avaliador:** Registrar os trechos retornados pelo MCP diretamente no `TraceContexto` (`registrar_evidencia_mcp` / `obter_evidencias_execucao` em `src/observabilidade/telemetria.py`) durante a execução de `consultar_mcp_async`, e repassá-los ao `avaliar_execucao` no benchmark e no Gerenciador de Agentes em Streamlit.
   3. **Sessão MCP Compartilhada por Execução (D-001):** Implementar o gerenciador `sessao_mcp_compartilhada(role)` em `src/agentes/mcp_toolkit.py`, mantendo um único processo `src.mcp.server` aquecido durante o Fan-Out das subtarefas do `executar_plano_executor` (com serialização thread-safe no canal stdio), eliminando múltiplos *cold boots* por pergunta.
   4. **Inicialização Lazy de LLM e Spans por Nó/Agente:** Substituir a instanciação ansiosa no topo de `coordenador.py` e `plano_executor.py` por inicialização *lazy* (`obter_llm()`), instrumentar cada nó dos grafos e turnos do AutoGen com `trace.span(..., tipo="node")`, contabilizar o custo de embeddings em `calcular_custo_execucao` e ampliar `max_mensagens` padrão para `9` em `conversa_grupo.py`.
   5. **Metadados de Citação e Estado `published`:** Completar os metadados (`documento`, `chunk_id`, `versao`, `status: "published"`) nos documentos base de `src/ingestao/ingestao.py` e filtrar `COALESCE(metadados->>'status', 'published') = 'published'` na query SQL de `src/mcp/server.py`.

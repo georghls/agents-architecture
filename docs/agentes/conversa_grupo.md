@@ -5,13 +5,16 @@
 **Módulo:** Fase 3 — Padrões Arquiteturais Multiagentes  
 **Componente:** Arquitetura 3 — Padrão Conversação em Grupo (Microsoft AutoGen 0.4 + MCP)  
 **Arquivos de Referência:**
-- Implementação da Equipe: [`src/agentes/conversa_grupo.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/agentes/conversa_grupo.py)
-- Integração e Ferramenta MCP: [`src/agentes/mcp_toolkit.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/agentes/mcp_toolkit.py)
-- Servidor MCP e RBAC: [`src/mcp/server.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/mcp/server.py)
-- Testes Automatizados: [`tests/test_conversa_grupo.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/tests/test_conversa_grupo.py)
-- Testes de Demonstração Interativa: [`tests/teste_conversa_grupo.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/tests/teste_conversa_grupo.py)
-- Registro de Decisões: [`docs/decisions.md`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/decisions.md) (D-007, D-010, D-011, D-013 e D-014)
-- Diagrama Conceitual da Fase 1: [`docs/diagramas/conversacao-em-grupo.mmd`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/diagramas/conversacao-em-grupo.mmd)
+- Implementação da Equipe: [`src/agentes/conversa_grupo.py`](../../src/agentes/conversa_grupo.py)
+- Integração e Ferramenta MCP: [`src/agentes/mcp_toolkit.py`](../../src/agentes/mcp_toolkit.py)
+- Servidor MCP e RBAC: [`src/mcp/server.py`](../../src/mcp/server.py)
+- Testes Automatizados: [`tests/test_conversa_grupo.py`](../../tests/test_conversa_grupo.py)
+- Testes de Demonstração Interativa: [`tests/teste_conversa_grupo.py`](../../tests/teste_conversa_grupo.py)
+- Registro de Decisões: [`docs/decisions.md`](../decisions.md) (`D-007`, `D-010`, `D-011`, `D-013`, `D-014`, `D-023`–`D-025`, `D-027`)
+- Diagrama Conceitual da Fase 1: [`docs/diagramas/conversacao-em-grupo.mmd`](../diagramas/conversacao-em-grupo.mmd)
+
+> [!NOTE]
+> **Evoluções posteriores (D-023–D-027):** Em incrementos posteriores, a equipe recebeu isolamento `<evidencia_mcp>` (`D-023`), ampliação de `max_mensagens` padrão para `9` com spans por turno (`D-024`), auditoria formal de consenso `_auditar_consenso_validador` (`D-025`) e padronização operacional em inglês (`D-027`). Veja o consolidado final em [`relatorio_tecnico_final.md`](../relatorio_tecnico_final.md).
 
 ---
 
@@ -104,7 +107,7 @@ Optou-se pelo `RoundRobinGroupChat` em vez do `SelectorGroupChat`:
 ## 4. Evidências de Testes e Validação Experimental
 
 ### 4.1. Testes Automatizados Determinísticos
-Arquivo: [`tests/test_conversa_grupo.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/tests/test_conversa_grupo.py)
+Arquivo: [`tests/test_conversa_grupo.py`](../../tests/test_conversa_grupo.py)
 
 ```powershell
 python -m pytest tests/test_conversa_grupo.py -m "not llm" -v
@@ -124,7 +127,7 @@ python -m pytest tests/test_conversa_grupo.py -m "not llm" -v
 ---
 
 ### 4.2. Teste de Integração Real com Supabase e Gemini
-Arquivo: [`tests/test_conversa_grupo.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/tests/test_conversa_grupo.py) (marcador `llm`)
+Arquivo: [`tests/test_conversa_grupo.py`](../../tests/test_conversa_grupo.py) (marcador `llm`)
 
 ```powershell
 python -m pytest tests/test_conversa_grupo.py -k "test_llm_geral_nao_vaza_projeto_secreto" -v
@@ -137,7 +140,7 @@ python -m pytest tests/test_conversa_grupo.py -k "test_llm_geral_nao_vaza_projet
 ---
 
 ### 4.3. Demonstração Interativa em Terminal
-Arquivo: [`tests/teste_conversa_grupo.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/tests/teste_conversa_grupo.py)
+Arquivo: [`tests/teste_conversa_grupo.py`](../../tests/teste_conversa_grupo.py)
 
 Execute a demonstração completa:
 ```powershell
@@ -154,8 +157,8 @@ O script demonstra em tempo real os 3 cenários de homologação:
 ## 5. Conclusão da Fase 3
 
 Com a conclusão e homologação da **Conversação em Grupo**, os três padrões arquiteturais definidos no planejamento original do estudo dirigido estão plenamente implementados, testados e conectados ao mesmo servidor MCP e à mesma base de dados vetorial:
-- ✅ **Padrão 1: Coordenador** (LangGraph) — [`docs/agentes/coordenador.md`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/agentes/coordenador.md)
-- ✅ **Padrão 2: Plano–Executor** (LangGraph) — [`docs/agentes/plano_executor.md`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/agentes/plano_executor.md)
-- ✅ **Padrão 3: Conversação em Grupo** (Microsoft AutoGen) — [`docs/agentes/conversa_grupo.md`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/agentes/conversa_grupo.md)
+- ✅ **Padrão 1: Coordenador** (LangGraph) — [`docs/agentes/coordenador.md`](coordenador.md)
+- ✅ **Padrão 2: Plano–Executor** (LangGraph) — [`docs/agentes/plano_executor.md`](plano_executor.md)
+- ✅ **Padrão 3: Conversação em Grupo** (Microsoft AutoGen) — [`docs/agentes/conversa_grupo.md`](conversa_grupo.md)
 
-O repositório encontra-se pronto para avançar para a **Fase 4: Observabilidade e LLMOps**.
+A avaliação comparativa completa (Fase 4 — Observabilidade/LLMOps e Fase 5 — Relatório Técnico) está consolidada em [`docs/llmops.md`](../llmops.md), [`docs/experimento-ragbench.md`](../experimento-ragbench.md) e [`docs/relatorio_tecnico_final.md`](../relatorio_tecnico_final.md).

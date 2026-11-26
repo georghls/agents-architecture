@@ -1,4 +1,4 @@
-"""Aplicação Web Unificada: Arena Comparativa Multiagente e Dashboard de LLMOps (Streamlit).
+"""Aplicação Web Unificada: Gerenciador de Agentes e Dashboard de LLMOps (Streamlit).
 
 Layout estilo Antigravity:
 - Barra lateral esquerda dedicada ao Histórico de Conversas (com botão '+ Nova Conversa'
@@ -463,7 +463,7 @@ def _render_painel_agente_empilhado(chave: str, dados: dict[str, Any], papel: st
 # 1. CONFIGURAÇÃO DA PÁGINA & DADOS BASE
 # ----------------------------------------------------------------------
 st.set_page_config(
-    page_title="Multi-Agent & LLMOps Arena — UNICAMP",
+    page_title="Agent Manager & LLMOps — UNICAMP",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -572,7 +572,7 @@ with st.container(border=True):
             wrap=True,
         )
 
-    with st.form("form_consulta_arena", clear_on_submit=False, border=False):
+    with st.form("form_consulta_gerenciador", clear_on_submit=False, border=False):
         col_in, col_sub = st.columns([5, 1], vertical_alignment="bottom")
         with col_in:
             pergunta_digitada = st.text_input(
@@ -596,7 +596,7 @@ if disparar and pergunta_digitada.strip():
             etapa_atual / total_etapas,
             text=f"Step {etapa_atual + 1}/{total_etapas}: Running Coordinator (LangGraph)...",
         )
-        run_coord = f"arena_coord_{ts}"
+        run_coord = f"gerenciador_coord_{ts}"
         resultados_rodada["coordenador"] = _executar_padrao(
             "coordenador",
             lambda: (executar_coordenador(prompt_atual, role=papel_selecionado, exibir_metricas=False, run_id=run_coord), {}),
@@ -611,7 +611,7 @@ if disparar and pergunta_digitada.strip():
             etapa_atual / total_etapas,
             text=f"Step {etapa_atual + 1}/{total_etapas}: Running Plan–Execute (LangGraph Fan-Out)...",
         )
-        run_plano = f"arena_plano_{ts}"
+        run_plano = f"gerenciador_plano_{ts}"
         resultados_rodada["plano_executor"] = _executar_padrao(
             "plano_executor",
             lambda: (executar_plano_executor(prompt_atual, role=papel_selecionado, exibir_metricas=False, run_id=run_plano), {}),
@@ -626,7 +626,7 @@ if disparar and pergunta_digitada.strip():
             etapa_atual / total_etapas,
             text=f"Step {etapa_atual + 1}/{total_etapas}: Running Group Chat (AutoGen 0.4)...",
         )
-        run_grupo = f"arena_grupo_{ts}"
+        run_grupo = f"gerenciador_grupo_{ts}"
 
         def _exec_grupo() -> tuple[str, dict[str, Any]]:
             res_g = executar_conversa_grupo(prompt_atual, papel=papel_selecionado, max_mensagens=9, run_id=run_grupo)

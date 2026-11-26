@@ -1,5 +1,8 @@
 # Plano de execução — Fase 2
 
+> [!NOTE]
+> **Registro histórico de fase concluída:** Este documento preserva o plano incremental e os registros de evidência produzidos durante a Fase 2. Todas as pendências listadas nas notas de setembro/outubro (JWT/A-05, citações `[documento | versao | chunk]`, revogação documental, chunking Top-K e policies RLS) foram posteriormente concluídas e registradas em [decisions.md](decisions.md) (`D-011`, `D-022`, `D-023`, `D-024`, `D-025`), [mcp.md](mcp.md) e [relatorio_tecnico_final.md](relatorio_tecnico_final.md).
+
 **Objetivo:** construir backend e integração segura via MCP, demonstrados por chamadas de cliente MCP sem agentes. Os passos são uma proposta incremental, não uma imposição literal do cronograma acadêmico.
 
 ## 2.1 Fixar um recorte técnico
