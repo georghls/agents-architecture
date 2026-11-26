@@ -5,13 +5,16 @@
 **Módulo:** Fase 3 — Padrões Arquiteturais Multiagentes  
 **Componente:** Arquitetura 2 — Padrão Plano–Executor (LangGraph + MCP)  
 **Arquivos de Referência:**
-- Implementação do Grafo: [`src/agentes/plano_executor.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/agentes/plano_executor.py)
-- Integração e Cliente MCP: [`src/agentes/mcp_toolkit.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/agentes/mcp_toolkit.py)
-- Servidor MCP e RBAC: [`src/mcp/server.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/mcp/server.py)
-- Testes Automatizados: [`tests/test_plano_executor.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/tests/test_plano_executor.py)
-- Testes de Demonstração: [`tests/teste_plano_executor.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/tests/teste_plano_executor.py)
-- Registro de Decisões: [`docs/decisions.md`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/decisions.md) (D-001, D-010, D-011 e D-012)
-- Diagrama Conceitual da Fase 1: [`docs/diagramas/plano-executor.mmd`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/diagramas/plano-executor.mmd)
+- Implementação do Grafo: [`src/agentes/plano_executor.py`](../../src/agentes/plano_executor.py)
+- Integração e Cliente MCP: [`src/agentes/mcp_toolkit.py`](../../src/agentes/mcp_toolkit.py)
+- Servidor MCP e RBAC: [`src/mcp/server.py`](../../src/mcp/server.py)
+- Testes Automatizados: [`tests/test_plano_executor.py`](../../tests/test_plano_executor.py)
+- Testes de Demonstração: [`tests/teste_plano_executor.py`](../../tests/teste_plano_executor.py)
+- Registro de Decisões: [`docs/decisions.md`](../decisions.md) (`D-001`, `D-010`, `D-011`, `D-012`, `D-022`–`D-025`, `D-027`)
+- Diagrama Conceitual da Fase 1: [`docs/diagramas/plano-executor.mmd`](../diagramas/plano-executor.mmd)
+
+> [!NOTE]
+> **Evoluções posteriores (D-023–D-027):** Além do Fan-Out/Fan-In base descrito abaixo, o grafo recebeu isolamento `<evidencia_mcp>` (`D-023`), sessão MCP compartilhada por execução (`sessao_mcp_compartilhada`, `D-024`) para eliminar múltiplos *cold boots* de subprocessos, nó `avaliador_execucao_node` com replanejamento limitado (`MAX_REPLANEJAMENTOS = 1`, `D-025`) e padronização operacional em inglês (`D-027`). Veja o consolidado final em [`relatorio_tecnico_final.md`](../relatorio_tecnico_final.md).
 
 ---
 
@@ -113,7 +116,7 @@ Conforme formalizado na decisão **D-012**:
 
 ## 5. Resultados e Evidências dos Testes Automatizados
 
-A suíte de testes em [`tests/test_plano_executor.py`](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/tests/test_plano_executor.py) foi executada de ponta a ponta contra a infraestrutura real (Google Gemini Flash + Servidor MCP stdio + Supabase com pgvector):
+A suíte de testes em [`tests/test_plano_executor.py`](../../tests/test_plano_executor.py) foi executada de ponta a ponta contra a infraestrutura real (Google Gemini Flash + Servidor MCP stdio + Supabase com pgvector):
 
 ```powershell
 python -m pytest tests/test_plano_executor.py -v

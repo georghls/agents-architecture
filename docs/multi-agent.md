@@ -1,5 +1,8 @@
 # Três padrões para a Fase 3
 
+> [!NOTE]
+> **Especificação conceitual (Fase 3 concluída):** Os três padrões descritos abaixo já foram integralmente implementados e avaliados. Consulte os relatórios individuais em [docs/agentes/README.md](agentes/README.md) e a análise empírica comparativa em [docs/relatorio_tecnico_final.md](relatorio_tecnico_final.md).
+
 Todos respondem ao mesmo problema documental pelo mesmo contrato MCP. Os diagramas da Fase 1 produzidos pelo autor são a referência visual a anexar e conferir. Os fluxos abaixo são **esboços para implementação**, não reconstruções fiéis desses diagramas.
 
 ## Coordenador — direção LangGraph

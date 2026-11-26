@@ -1,5 +1,8 @@
 # Planejamento Detalhado — Fase 3: Arquiteturas Multiagentes
 
+> [!NOTE]
+> **Registro histórico de planejamento (Fase 3 concluída):** Este documento registra o roteiro inicial elaborado antes da implementação dos três padrões. A implementação final — incluindo AutoGen 0.4+ (`autogen-agentchat`, em vez de `pyautogen`), JWT HS256 na sessão MCP, Fan-Out paralelo via `Send` API e os relatórios técnicos definitivos — está consolidada em [docs/agentes/README.md](agentes/README.md), [docs/decisions.md](decisions.md) (`D-010` a `D-025`) e [docs/relatorio_tecnico_final.md](relatorio_tecnico_final.md).
+
 Este documento descreve o plano de ação passo a passo para a execução da **Fase 3** do Estudo Dirigido. Nesta fase, o repositório deixará de ser apenas um banco de dados e um servidor passivo, passando a contar com inteligências artificiais autônomas orquestrando as consultas.
 
 ## 🎯 Objetivo Principal

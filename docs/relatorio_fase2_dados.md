@@ -1,5 +1,8 @@
 # Relatório de Implementação e Decisões: Persistência e Dados (Fase 2)
 
+> [!NOTE]
+> **Marco histórico (Fase 2 — etapa de dados):** Este relatório registra o primeiro marco de persistência no Supabase + Gemini Embeddings. As evoluções posteriores (Servidor MCP com JWT HS256, chunking semântico Top-K, revogação documental e ingestão do `galileo-ai/ragbench`) estão documentadas em [mcp.md](mcp.md), [decisions.md](decisions.md) (`D-011`, `D-022`–`D-026`) e [relatorio_tecnico_final.md](relatorio_tecnico_final.md).
+
 ## 1. Contexto e Objetivo
 Este documento detalha as implementações técnicas e arquiteturais realizadas para suprir a primeira etapa da **Fase 2** do Estudo Dirigido: *"implementação mínima verificável de dados, recuperação e controle de acesso"*. O objetivo foi estabelecer uma base sólida de conhecimento (banco de dados vetorial) que será posteriormente consumida pelos agentes através de um servidor MCP.
 

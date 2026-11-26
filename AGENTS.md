@@ -6,10 +6,12 @@ Projeto acadêmico: **Engenharia de Software para IA: Arquitetura, Integração 
 
 ## Estado e prioridades
 
-- Fase 1: desenho arquitetural visual concluído pelo autor; os diagramas ainda devem ser adicionados ao repositório e confrontados com a documentação.
-- Fase 2: integração e segurança via MCP. Comece por uma implementação mínima verificável de dados, recuperação e controle de acesso; implemente o servidor e teste suas ferramentas com um cliente MCP, sem depender de agentes.
-- Fases seguintes: três arquiteturas multiagentes, observabilidade/LLMOps, interface de usuário, dashboard e relatório técnico.
-- Não declare uma fase concluída apenas porque existe documentação; registre os resultados dos testes de aceitação.
+- Fase 1 (Desenho arquitetural): concluída; diagramas dos três padrões transcritos em `docs/diagramas/` e arquitetura consolidada em `docs/architecture.md` e `docs/relatorio_tecnico_final.md`.
+- Fase 2 (Integração e segurança via MCP): concluída; persistência PostgreSQL/`pgvector` (Supabase), embeddings Google Gemini, autenticação JWT HS256, whitelist RBAC, revogação documental e servidor MCP `stdio` verificados por testes automatizados e `scripts/cliente.py`.
+- Fase 3 (Orquestração multiagentes): concluída; padrões Coordenador (LangGraph), Plano–Executor (LangGraph + Fan-Out) e Conversação em Grupo (AutoGen 0.4+) implementados sobre o mesmo contrato MCP.
+- Fase 4 (Observabilidade, LLMOps e UI): concluída; telemetria SQLite, FinOps, Golden Dataset, experimento `galileo-ai/ragbench`, LLM-as-a-Judge, testes de resiliência e Gerenciador de Agentes em Streamlit.
+- Fase 5 (Documentação e Relatório Técnico): consolidada em `docs/relatorio_tecnico_final.md` e `docs/experimento-ragbench.md`.
+- Não declare novos incrementos concluídos sem executar os testes de aceitação e registrar comandos e resultados.
 
 ## Decisões e limites
 
@@ -32,9 +34,11 @@ Projeto acadêmico: **Engenharia de Software para IA: Arquitetura, Integração 
 
 ## Documentos de apoio
 
+- `docs/relatorio_tecnico_final.md`: relatório técnico consolidado (Fases 1 a 5).
+- `docs/experimento-ragbench.md`: resultados experimentais sobre `galileo-ai/ragbench`.
 - `docs/architecture.md`: componentes e fronteiras.
-- `docs/mcp.md`: contratos propostos e segurança.
+- `docs/mcp.md`: contratos, ciclo de vida e segurança MCP.
 - `docs/multi-agent.md`: padrões e comparação.
-- `docs/llmops.md`: observabilidade e avaliação.
-- `docs/fase-2.md`: tarefas e critérios de aceite.
-- `docs/decisions.md`: decisões confirmadas e pendências.
+- `docs/llmops.md`: observabilidade, avaliação e resiliência.
+- `docs/fase-2.md`: histórico de tarefas e critérios de aceite da Fase 2.
+- `docs/decisions.md`: decisões confirmadas (D-001 a D-027).

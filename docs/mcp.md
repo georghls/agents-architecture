@@ -21,137 +21,146 @@ A arquitetura do MCP neste projeto é composta por 5 camadas interligadas:
 ```mermaid
 flowchart TD
     subgraph Camada_Agentes["1. Orquestração e Agentes"]
-        Agente["Agente / Coordenador (LangGraph)"]
-        Toolkit["mcp_toolkit.py (LangChain Tool Adapter)"]
-        Agente --> Toolkit
+        Agente["Agentes (LangGraph / AutoGen)"]
+        Toolkit["mcp_toolkit.py (Tool com role fixado em closure)"]
+        Agente -->|"pergunta (sem papel no schema)"| Toolkit
     end
 
-    subgraph Camada_Cliente["2. Cliente MCP"]
+    subgraph Camada_Cliente["2. Cliente MCP & Identidade"]
+        JWT["src/autorizacao/tokens.py (Gera JWT HS256)"]
         ClienteMCP["mcp.Client / ClientSession (SDK Oficial)"]
-        Toolkit --> ClienteMCP
+        Toolkit --> JWT
+        JWT -->|"MCP_AUTH_TOKEN no env"| ClienteMCP
     end
 
     subgraph Transporte["3. Transporte IPC (stdio)"]
-        Canal["JSON-RPC 2.0 sobre stdin/stdout"]
+        Canal["JSON-RPC 2.0 sobre stdin/stdout (subprocesso isolado)"]
         ClienteMCP <==> Canal
     end
 
-    subgraph Camada_Servidor["4. Servidor MCP"]
-        Servidor["src/mcp/server.py (MCPServer)"]
+    subgraph Camada_Servidor["4. Servidor MCP (src/mcp/server.py)"]
+        Servidor["MCPServer: buscar_documentos_corporativos(pergunta)"]
+        Auth["Validação JWT HS256 -> extrai papel (fail-closed)"]
+        Busca["Filtro RBAC + status='published' + corte <= 0.60 + Top-3"]
         Canal <==> Servidor
-        FiltroRBAC["Controle de Acesso & Corte de Distância"]
-        Servidor --> FiltroRBAC
+        Servidor --> Auth
+        Auth --> Busca
     end
 
     subgraph Camada_Dados["5. Nuvem, IA e Persistência"]
-        Gemini["Google Gemini API (models/gemini-embedding-2)"]
+        Gemini["Google Gemini API (gemini-embedding-2, 3072 dim)"]
         Supabase["Supabase PostgreSQL 15 + pgvector"]
-        FiltroRBAC -->|"Gera vetor (3072 dim)"| Gemini
-        FiltroRBAC -->|"Consulta SQL parametrizada"| Supabase
+        Busca -->|"Embedding (retrieval_query)"| Gemini
+        Busca -->|"SQL parametrizada"| Supabase
     end
 ```
 
 ### Detalhamento dos Componentes
 
-- **Cliente MCP ([src/agentes/mcp_toolkit.py](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/agentes/mcp_toolkit.py) e [scripts/cliente.py](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/scripts/cliente.py)):**
+- **Cliente MCP ([src/agentes/mcp_toolkit.py](../src/agentes/mcp_toolkit.py) e [scripts/cliente.py](../scripts/cliente.py)):**
   - Utiliza o SDK oficial Python (`mcp`).
-  - Gerencia o ciclo de vida do servidor (spawn do subprocesso `python -m src.mcp.server`).
-  - Traduz os parâmetros dos frameworks de agentes (ex: `query`/`role` do LangChain) para o contrato canônico do servidor (`pergunta`/`papel_do_usuario`).
-  - Sanitiza erros de transporte ou falhas de ferramenta, devolvendo mensagens amigáveis ao agente e enviando detalhes técnicos ao `stderr`.
+  - Gerencia o ciclo de vida do servidor (spawn do subprocesso `python -m src.mcp.server`, incluindo sessão compartilhada em `sessao_mcp_compartilhada` para o Fan-Out do Plano–Executor conforme [D-024](decisions.md#d-024--correção-de-distorções-experimentais-assimetria-de-embeddings-retrieval_query-rastreamento-de-contexto-mcp-no-juiz-llm-sessão-mcp-compartilhada-no-planoexecutor-e-instrumentação-granular-de-spans-2026-11-06)).
+  - Fixa o papel do usuário em closure na criação da ferramenta (`criar_ferramenta_busca(role)`), sem expor `role` no schema do LLM ([D-010](decisions.md#d-010--papel-do-usuário-fixado-pelo-código-fora-do-schema-da-ferramenta-2026-10-13)), e gera o JWT assinado (HS256) injetado na sessão ([D-011](decisions.md#d-011--autenticação-de-sessão-mcp-via-jwt-assinado-e-fechamento-de-a-05-2026-10-14)).
+  - Traduz o parâmetro `query` do adapter para `pergunta` no contrato canônico do servidor.
+  - Sanitiza erros de transporte ou falhas de ferramenta, devolvendo mensagens seguras ao agente e enviando detalhes técnicos ao `stderr`.
 - **Camada de Transporte (`stdio`):**
-  - Adotada na decisão [D-007](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/decisions.md#d-007--simplificação-e-mudança-do-mcp-para-o-protocolo-stdio-2026-10-05).
+  - Adotada na decisão [D-007](decisions.md#d-007--simplificação-e-mudança-do-mcp-para-o-protocolo-stdio-2026-10-05).
   - Troca mensagens JSON-RPC 2.0 serializadas por linha de texto através de `stdin` e `stdout`.
-  - Isola variáveis de ambiente: repassa unicamente `DATABASE_URL` e `GEMINI_API_KEY` ao processo filho, evitando vazamento acidental de outros segredos da aplicação.
-- **Servidor MCP ([src/mcp/server.py](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/mcp/server.py)):**
+  - Isola variáveis de ambiente: repassa unicamente `DATABASE_URL`, `GEMINI_API_KEY`, `AUTH_SECRET_KEY` e `MCP_AUTH_TOKEN` ao processo filho, evitando vazamento acidental de outros segredos da aplicação.
+- **Servidor MCP ([src/mcp/server.py](../src/mcp/server.py)):**
   - Instancia `MCPServer("ServidorDeDocumentos")`.
-  - Registra a ferramenta `@mcp.tool() def buscar_documentos_corporativos(...)`.
-  - Executa a busca semântica autorizada via função `buscar_no_banco`.
-- **Serviço de Embeddings Semânticos ([src/busca/embeddings.py](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/busca/embeddings.py)):**
-  - Conforme decisão [D-006](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/decisions.md#d-006--adoção-da-api-do-google-gemini-para-embeddings-2026-10-05), converte a pergunta do usuário em um vetor denso de 3072 dimensões via API do Google Gemini (`models/gemini-embedding-2`).
-- **Banco de Dados Relacional e Vetorial ([src/persistencia/](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/src/persistencia)):**
-  - Conforme decisões [D-004](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/decisions.md#d-004--arquitetura-de-persistência-unificada-no-postgresql-2026-09-30) e [D-005](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/decisions.md#d-005--migração-de-persistência-local-para-nuvem-supabase-2026-10-05), unifica metadados de controle de acesso (`JSONB`), texto puro (`conteudo`) e índice vetorial (`vector(3072)`) na tabela `documentos` do Supabase PostgreSQL.
+  - Registra a ferramenta `@mcp.tool() def buscar_documentos_corporativos(pergunta: str) -> str`.
+  - Valida criptograficamente o JWT da sessão (`obter_papel_da_sessao`, com whitelist `geral`, `rh`, `diretoria` em [D-023](decisions.md#d-023--endurecimento-de-segurança-security-hardening-isolamento-contra-indirect-prompt-injection-gestão-criptográfica-jwt-whitelist-rbac-e-políticas-rls-2026-11-04)) e executa a busca semântica autorizada via `buscar_no_banco`.
+- **Serviço de Embeddings Semânticos ([src/busca/embeddings.py](../src/busca/embeddings.py)):**
+  - Conforme decisões [D-006](decisions.md#d-006--adoção-da-api-do-google-gemini-para-embeddings-2026-10-05) e [D-024](decisions.md#d-024--correção-de-distorções-experimentais-assimetria-de-embeddings-retrieval_query-rastreamento-de-contexto-mcp-no-juiz-llm-sessão-mcp-compartilhada-no-planoexecutor-e-instrumentação-granular-de-spans-2026-11-06), converte a pergunta do usuário em um vetor denso de 3072 dimensões via SDK oficial `google-genai` (`models/gemini-embedding-2`, `task_type="retrieval_query"`).
+- **Banco de Dados Relacional e Vetorial ([src/persistencia/](../src/persistencia)):**
+  - Conforme decisões [D-004](decisions.md#d-004--arquitetura-de-persistência-unificada-no-postgresql-2026-09-30) e [D-005](decisions.md#d-005--migração-de-persistência-local-para-nuvem-supabase-2026-10-05), unifica metadados de controle de acesso e rastreabilidade (`JSONB`: `papel`, `documento`, `versao`, `chunk_id`, `status`), texto puro (`conteudo`) e índice vetorial (`vector(3072)`) na tabela `documentos` do Supabase PostgreSQL.
 
 ---
 
 ## 3. Funcionamento Operacional e Ciclo de Vida
 
-O ciclo de interação entre o agente e o servidor MCP segue 5 fases sequenciais:
+O ciclo de interação entre o agente e o servidor MCP segue 4 fases sequenciais:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Agente as Agente (LangGraph / Grafo)
+    participant Agente as Agente (LangGraph / AutoGen)
     participant Cliente as Cliente MCP (mcp_toolkit)
     participant Servidor as Servidor MCP (server.py)
     participant Gemini as Google Gemini API
     participant Banco as Supabase (PostgreSQL + pgvector)
 
-    Note over Cliente,Servidor: Fase 1: Conexão e Handshake
-    Cliente->>Servidor: Inicia subprocesso via stdio
+    Note over Cliente,Servidor: Fase 1: Autenticação, Subprocesso e Handshake
+    Cliente->>Cliente: Gera token JWT (HS256) com o papel da sessão
+    Cliente->>Servidor: Inicia subprocesso via stdio com MCP_AUTH_TOKEN no env
     Cliente->>Servidor: JSON-RPC initialize (negocia capacidades e versão)
     Servidor-->>Cliente: Resposta de inicialização
 
     Note over Cliente,Servidor: Fase 2: Descoberta de Ferramentas
     Cliente->>Servidor: JSON-RPC tools/list
-    Servidor-->>Cliente: Lista ferramentas disponíveis e esquemas JSON
+    Servidor-->>Cliente: Schema de buscar_documentos_corporativos(pergunta)
 
-    Note over Agente,Banco: Fase 3: Invocação e Busca Semântica
-    Agente->>Cliente: Invoca ferramenta_busca_corporativa(query) com role fixado pelo código (D-010)
+    Note over Agente,Banco: Fase 3: Invocação e Validação Criptográfica
+    Agente->>Cliente: Chama ferramenta passando apenas a pergunta (role fixado em closure)
     Cliente->>Servidor: JSON-RPC tools/call (buscar_documentos_corporativos)
-    Servidor->>Gemini: Gera embedding da pergunta (3072 dimensões)
-    Gemini-->>Servidor: Vetor da pergunta
-    Servidor->>Banco: SQL: Busca por distância cosseno com filtro de papel
-    Banco-->>Servidor: Registro correspondente ou vazio
+    Servidor->>Servidor: Valida assinatura, expiração e whitelist do JWT (MCP_AUTH_TOKEN)
 
-    Note over Servidor,Agente: Fase 4: Avaliação de Relevância e Retorno
-    alt Distância <= 0.60 e papel autorizado
-        Servidor-->>Cliente: "Documento encontrado: <conteúdo>"
-    else Distância > 0.60 ou papel não autorizado
-        Servidor-->>Cliente: "Nenhum documento encontrado nos registros autorizados..."
+    alt Token ausente, expirado ou inválido
+        Servidor-->>Cliente: "MCP Error: Unauthenticated session... Access denied."
+    else Token válido (papel extraído do JWT)
+        Servidor->>Gemini: Gera embedding da pergunta (3072 dimensões, retrieval_query)
+        Gemini-->>Servidor: Vetor da pergunta
+        Servidor->>Banco: SQL: WHERE papel IN ('geral', papel_jwt) AND status = 'published' AND distancia <= 0.60 ORDER BY distancia LIMIT 3
+        Banco-->>Servidor: Até 3 trechos autorizados (ou vazio)
+
+        Note over Servidor,Agente: Fase 4: Retorno Seguro e Citações
+        alt Trechos encontrados
+            Servidor-->>Cliente: Trechos formatados com citação [documento | versão | chunk]
+        else Distância > 0.60, revogado ou papel não autorizado
+            Servidor-->>Cliente: Mensagem neutra (anti-oráculo)
+        end
     end
-    Cliente-->>Agente: Texto do resultado estruturado
+    Cliente-->>Agente: Evidências textuais ou erro sanitizado
 ```
 
 ### Passo a Passo das Fases
 
-### 1. Inicialização e Handshake
-O cliente instancia o transporte `stdio_client` com os parâmetros configurados em `parametros_servidor()`. É enviado o método `initialize`, negociando as versões compatíveis do protocolo MCP (ex.: versão `2026-07-28` suportada pelo SDK `mcp`).
+#### 1. Autenticação, Subprocesso e Handshake
+O cliente gera um token JWT assinado (`HS256`) contendo o papel autorizado da sessão e instancia o transporte `stdio_client` com `MCP_AUTH_TOKEN` injetado via `parametros_servidor()`. Em seguida, envia o método `initialize`, negociando as versões compatíveis e capacidades do protocolo MCP.
 
-### 2. Descoberta de Capacidades (`tools/list`)
+#### 2. Descoberta de Ferramentas (`tools/list`)
 O cliente consulta as ferramentas disponíveis no servidor sem precisar de credenciais de banco. O servidor expõe dinamicamente os metadados gerados a partir do decorador `@mcp.tool()`:
 - Nome da ferramenta: `buscar_documentos_corporativos`
 - Descrição da capacidade
-- Esquema JSON dos parâmetros esperados (`pergunta` e `papel_do_usuario`).
+- Esquema JSON contendo exclusivamente o parâmetro `pergunta` (o papel nunca trafega como argumento da ferramenta, conforme D-010, D-011 e D-023).
 
-### 3. Chamada da Ferramenta (`tools/call`)
+#### 3. Invocação, Validação Criptográfica e Busca Segura (`tools/call`)
 Quando o agente decide buscar informações corporativas:
-1. O cliente envia a requisição JSON-RPC `tools/call`.
-2. O servidor extrai os argumentos validados contra o schema.
-
-### 4. Execução Interna e Filtragem Segura
-Dentro de `buscar_no_banco`:
-1. **Geração do Embedding:** O texto de `pergunta` é convertido em vetor semântico pela função `get_embedding`.
-2. **Execução da Query SQL Segura:** A busca combina autorização e distância vetorial em uma única instrução SQL parametrizada:
+1. **Envio e Validação JWT:** O cliente envia `tools/call` com `{ "pergunta": "..." }`. O servidor valida o token em `MCP_AUTH_TOKEN` via `obter_papel_da_sessao()`. Se o token estiver ausente, expirado, adulterado ou contiver papel fora da whitelist (`geral`, `rh`, `diretoria`), falha fechado imediatamente (`MENSAGEM_ERRO_AUTH`).
+2. **Geração do Embedding:** Com o papel validado, `buscar_no_banco` converte `pergunta` em um vetor de 3072 dimensões via `get_embedding(pergunta, task_type="retrieval_query")`.
+3. **Execução da Query SQL Segura (Top-K e Corte de Distância):** A consulta combina autorização RBAC, status de publicação ativa (`published`), distância cosseno (`LIMIAR_DISTANCIA = 0.60`, onde `0.0` é idêntico e `1.0` é ortogonal) e recuperação Top-K (`TOP_K_PADRAO = 3`, D-022) em uma única instrução SQL parametrizada:
    ```sql
    SELECT 
        conteudo, 
+       metadados->>'documento' AS doc_origem,
+       metadados->>'versao' AS versao_doc,
+       metadados->>'chunk_id' AS chunk_id,
        (embedding <=> %s::vector) AS distancia
    FROM documentos 
    WHERE metadados->>'papel' IN ('geral', %s)
+     AND COALESCE(metadados->>'status', 'published') = 'published'
      AND (embedding <=> %s::vector) <= %s
    ORDER BY distancia ASC
-   LIMIT 1;
+   LIMIT %s;
    ```
-3. **Corte de Distância Semântica (`LIMIAR_DISTANCIA = 0.60`):**
-   - O operador `<=>` calcula a distância cosseno (onde `0.0` é idêntico e `1.0` é ortogonal).
-   - Apenas registros com distância $\le 0.60$ são considerados relevantes.
-   - Perguntas irrelevantes ou fora de escopo são barradas diretamente no banco, impedindo recuperação de trechos espúrios.
 
-### 5. Resposta Neutra e Proteção contra Ataques de Oráculo
-Se o usuário não possuir permissão para o documento, ou se a pergunta não atingir o limiar de relevância, o servidor retorna exatamente a mesma mensagem neutra:
-> *"Nenhum documento encontrado nos registros autorizados para o seu perfil."*
-
-Essa uniformidade impede **ataques de inferência por oráculo**: um usuário não autorizado não consegue deduzir se um documento sigiloso existe ou não na base corporativa.
+#### 4. Retorno Seguro, Citações e Proteção Anti-Oráculo
+- **Evidências com Citação Rastreável:** Quando há registros autorizados dentro do limiar semântico, o servidor retorna os trechos formatados com referência rastreável `[documento | versao | chunk]` (D-025).
+- **Resposta Neutra (Anti-Oráculo):** Se o usuário não possuir permissão para o documento, se o documento estiver revogado (`revoked`) ou se a pergunta não atingir o limiar de relevância, o servidor retorna exatamente a mesma mensagem neutra (em inglês conforme D-027):
+  > *"No documents found in authorized records for your access profile."*
+  Essa uniformidade impede **ataques de inferência por oráculo**, evitando que um usuário não autorizado deduza se um documento sigiloso existe na base.
+- **Falha Segura de Infraestrutura:** Em caso de falha transitória de banco ou embeddings, o servidor captura a exceção e devolve uma mensagem genérica segura (`MENSAGEM_ERRO_SISTEMA`, D-018) sem vazar credenciais ou stack traces.
 
 ---
 
@@ -209,7 +218,7 @@ Essa uniformidade impede **ataques de inferência por oráculo**: um usuário n�
     "content": [
       {
         "type": "text",
-        "text": "Documento encontrado: O orçamento aprovado para o Projeto Secreto em 2027 é de R$ 50 milhões, com foco em aquisições estratégicas."
+        "text": "Document found [projeto_secreto_x | v1 | chunk 1]: The approved budget for Project X in 2027 is R$ 50 million, focused on strategic acquisitions."
       }
     ],
     "isError": false
@@ -249,7 +258,7 @@ python scripts/cliente.py
 ```
 
 ### 2. Testes Automatizados de Contrato e Isolamento
-A suíte de testes em [tests/test_mcp_toolkit.py](file:///c:/Users/georg/Estudos/unicamp\agents-architecture/tests/test_mcp_toolkit.py) valida:
+A suíte de testes em [tests/test_mcp_toolkit.py](../tests/test_mcp_toolkit.py) valida:
 - Exposição do schema correto da ferramenta (apenas `pergunta`).
 - Descoberta stdio sem segredos de banco.
 - Isolamento de variáveis de ambiente no subprocesso.
@@ -266,7 +275,7 @@ python -m pytest tests/test_mcp_toolkit.py -v
 
 ## 7. Referências e Decisões Relacionadas
 
-- [docs/decisions.md](file:///c:/Users/georg/Estudos/unicamp/agents-architecture/docs/decisions.md):
+- [docs/decisions.md](decisions.md):
   - **D-004:** Unificação relacional e vetorial no PostgreSQL (`pgvector`).
   - **D-005:** Migração da persistência para o Supabase (DBaaS).
   - **D-006:** Adoção do Google Gemini para embeddings (`gemini-embedding-2`).
@@ -274,6 +283,11 @@ python -m pytest tests/test_mcp_toolkit.py -v
   - **D-008:** Integração dos agentes com o servidor MCP real via stdio e isolamento de segredos.
   - **D-010:** Papel do usuário fixado pelo código, fora do schema da ferramenta.
   - **D-011:** Autenticação de sessão MCP via JWT assinado e fechamento da questão A-05.
+  - **D-022:** Chunking semântico e recuperação Top-K (`TOP_K_PADRAO = 3`) no servidor MCP.
+  - **D-023:** Endurecimento de segurança (whitelist RBAC, remoção de bypass de papel e isolamento contra injeção indireta).
+  - **D-024:** Embeddings assimétricos (`retrieval_query`), filtro `published` e sessão MCP compartilhada no Plano–Executor.
+  - **D-025:** Contrato completo de citação rastreável (`[documento | versao | chunk]`) e revogação documental.
+  - **D-027:** Padronização das mensagens operacionais do servidor e cliente MCP em língua inglesa.
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2026-07-28)
 - [RFC 7519 — JSON Web Token (JWT)](https://datatracker.ietf.org/doc/html/rfc7519)
 

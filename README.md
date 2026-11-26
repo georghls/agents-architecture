@@ -6,13 +6,15 @@ Repositório do estudo dirigido focado no projeto, integração segura e operaç
 
 ## 📌 Visão Geral do Projeto
 
-O objetivo deste projeto é implementar e comparar experimentalmente três padrões arquiteturais de sistemas multiagentes:
-1. **Coordenador (*Supervisor Pattern*)** — Implementado com **LangGraph** (concluído)
-2. **Plano–Executor (*Plan-and-Execute*)** — Implementado com **LangGraph** (concluído)
+O objetivo deste projeto é implementar, instrumentar e comparar experimentalmente três padrões arquiteturais de sistemas multiagentes ao longo das 5 fases do estudo dirigido (**Desenho, Integração Segura MCP, Orquestração Multiagentes, LLMOps/Gerenciador de Agentes e Relatório Técnico**):
+1. **Coordenador (*Supervisor Pattern*)** — Implementado com **LangGraph** (concluído e testado)
+2. **Plano–Executor (*Plan-and-Execute / Fan-Out*)** — Implementado com **LangGraph** (concluído e testado)
 3. **Conversação em Grupo (*Group Chat*)** — Implementado com **Microsoft AutoGen 0.4+** (concluído e testado)
 
+Todos os padrões são avaliados sob o mesmo corpus sintético e sobre a amostra estratificada do benchmark público **`galileo-ai/ragbench`** (`techqa`, `cuad`, `finqa`), com observabilidade em SQLite, FinOps versionado, juiz semântico *LLM-as-a-Judge* e Gerenciador de Agentes em Streamlit.
+
 ### Regra Fundamental de Arquitetura
-Os agentes e modelos de linguagem (LLM) **nunca acessam o banco de dados diretamente** nem possuem privilégios declarados por prompt. Toda recuperação documental é obrigatoriamente intermediada por um servidor **Model Context Protocol (MCP)** via transporte `stdio`, garantindo que o controle de acesso baseado em papel (RBAC) seja aplicado no nível de dados e na camada de protocolo.
+Os agentes e modelos de linguagem (LLM) **nunca acessam o banco de dados diretamente** nem possuem privilégios declarados por prompt. Toda recuperação documental é obrigatoriamente intermediada por um servidor **Model Context Protocol (MCP)** via transporte `stdio` com autenticação criptográfica **JWT (HS256)**, garantindo que o controle de acesso baseado em papel (RBAC — `geral`, `rh`, `diretoria`) seja aplicado no nível de dados e na camada de protocolo.
 
 ---
 
@@ -43,54 +45,70 @@ O projeto adota uma arquitetura híbrida projetada para contornar restrições d
 ## 📂 Estrutura do Repositório
 
 ```text
-├── AGENTS.md                  # Instruções de contexto e governança do estudo dirigido
-├── pyproject.toml             # Configuração do projeto e dependências empacotadas
-├── requirements.txt           # Dependências para instalação via pip
-├── .env.example               # Modelo das variáveis de ambiente necessárias
-├── .gitignore                 # Regras completas de exclusão de artefatos e segredos
+├── AGENTS.md                        # Instruções de contexto e governança do estudo dirigido
+├── pyproject.toml                   # Configuração do projeto, dependências e marcadores pytest
+├── requirements.txt                 # Dependências para instalação via pip
+├── .env.example                     # Modelo das variáveis de ambiente necessárias
+├── .gitignore                       # Regras completas de exclusão de artefatos, bancos e segredos
 │
-├── docs/                      # Documentação técnica e acadêmica completa
-│   ├── architecture.md        # Fronteiras e responsabilidades arquiteturais
-│   ├── decisions.md           # Registro histórico de decisões de arquitetura (ADRs)
-│   ├── estudo-dirigido.md     # Metodologia e cronograma do estudo
-│   ├── fase-2.md              # Tarefas, contratos e evidências da Fase 2 (MCP)
-│   ├── fase-3-planejamento.md # Planejamento das 3 arquiteturas multiagentes
-│   ├── llmops.md              # Requisitos de observabilidade e métricas (Fase 4)
-│   ├── mcp.md                 # Especificação dos contratos de ferramentas MCP
-│   ├── multi-agent.md         # Detalhamento comparativo dos três padrões
-│   ├── agentes/               # Relatórios técnicos dos padrões implementados
+├── data/                            # Corpus documental sintético, RAGBench e gabaritos
+│   ├── golden_dataset.json          # Gabarito fixo com 24 cenários (públicos, RBAC e injection)
+│   ├── ragbench_golden_dataset.json # Gabarito estratificado do benchmark galileo-ai/ragbench
+│   └── documentos/                  # Documentos Markdown segregados por perfil (geral, rh, diretoria)
+│
+├── docs/                            # Documentação técnica e acadêmica completa
+│   ├── relatorio_tecnico_final.md   # Relatório técnico consolidado (Fases 1 a 5)
+│   ├── experimento-ragbench.md      # Resultados experimentais sobre galileo-ai/ragbench (D-026/D-027)
+│   ├── architecture.md              # Fronteiras e responsabilidades arquiteturais
+│   ├── decisions.md                 # Registro histórico de decisões de arquitetura (D-001 a D-027)
+│   ├── estudo-dirigido.md           # Metodologia, escopo e entregáveis do estudo
+│   ├── mcp.md                       # Especificação dos contratos, ciclo de vida e segurança MCP
+│   ├── multi-agent.md               # Detalhamento comparativo dos três padrões
+│   ├── llmops.md                    # Observabilidade, avaliação, resiliência e Fase 4
+│   ├── fase-2.md                    # Histórico de tarefas, critérios e evidências da Fase 2
+│   ├── fase-3-planejamento.md       # Planejamento inicial e registros históricos da Fase 3
+│   ├── relatorio_fase2_dados.md     # Relatório de implementação da camada de dados (Fase 2)
+│   ├── agentes/                     # Relatórios técnicos detalhados de cada padrão
 │   │   ├── README.md
-│   │   ├── coordenador.md     # Relatório técnico completo do Agente Coordenador
-│   │   ├── plano_executor.md  # Relatório técnico completo do Agente Plano-Executor
-│   │   └── conversa_grupo.md  # Relatório técnico completo do Agente Conversação em Grupo
-│   └── diagramas/             # Diagramas em formato Mermaid (.mmd)
+│   │   ├── coordenador.md           # Relatório técnico do Agente Coordenador
+│   │   ├── plano_executor.md        # Relatório técnico do Agente Plano–Executor
+│   │   └── conversa_grupo.md        # Relatório técnico do Agente Conversação em Grupo
+│   ├── diagramas/                   # Diagramas conceituais em formato Mermaid (.mmd)
+│   └── referencias/                 # Planejamento acadêmico original (PDF)
 │
-├── src/                       # Código-fonte da aplicação
-│   ├── config.py              # Leitura sob demanda de configurações e segredos (.env)
-│   ├── agentes/               # Módulos de orquestração multiagentes
-│   │   ├── coordenador.py     # Grafo do Coordenador (Supervisor, Pesquisador, Redator)
-│   │   ├── plano_executor.py  # Grafo do Plano-Executor (Planner, Executores Paralelos, Sintetizador)
-│   │   ├── conversa_grupo.py  # Equipe AutoGen (Retrieval, Analyst, Validator)
-│   │   └── mcp_toolkit.py     # Cliente MCP e Toolkits seguros (LangChain e AutoGen)
-│   ├── autorizacao/           # Fronteira de autorização e controle de identidade
-│   ├── busca/                 # Embeddings Gemini e consultas vetoriais
-│   ├── ingestao/              # Pipeline de ingestão do corpus documental sintético
-│   ├── mcp/                   # Servidor MCP oficial (ferramentas corporativas)
-│   │   └── server.py          # MCPServer com isolamento SQL e nota de corte
-│   └── persistencia/          # Setup estrutural de tabelas e extensão pgvector
+├── src/                             # Código-fonte da aplicação
+│   ├── config.py                    # Leitura sob demanda de configurações e segredos (.env)
+│   ├── agentes/                     # Módulos de orquestração multiagentes
+│   │   ├── coordenador.py           # Grafo do Coordenador (Supervisor, Pesquisador, Redator, Validador)
+│   │   ├── plano_executor.py        # Grafo do Plano–Executor (Planner, Fan-Out, Avaliador, Sintetizador)
+│   │   ├── conversa_grupo.py        # Equipe AutoGen 0.4+ (Retrieval, Analyst, Validator)
+│   │   └── mcp_toolkit.py           # Cliente MCP, sessão compartilhada e Toolkits seguros
+│   ├── autorizacao/                 # Emissão e validação de tokens JWT HS256 e whitelist RBAC
+│   ├── busca/                       # Embeddings Gemini (google-genai) e consultas vetoriais
+│   ├── ingestao/                    # Ingestão com chunking semântico e loader do RAGBench
+│   ├── mcp/                         # Servidor MCP oficial (ferramentas corporativas)
+│   │   └── server.py                # MCPServer com JWT fail-closed, Top-K, citações e corte semântico
+│   ├── observabilidade/             # Telemetria SQLite, FinOps (custos) e LLM-as-a-Judge (avaliador)
+│   ├── persistencia/                # Setup estrutural de tabelas, pgvector e políticas RLS
+│   └── ui/                          # Interface Web Gerenciador de Agentes e Dashboard (Streamlit + Plotly)
 │
-├── scripts/                   # Scripts executáveis de demonstração
-│   └── cliente.py             # Cliente MCP puro demonstrando descoberta e chamadas
+├── scripts/                         # Scripts executáveis de demonstração e benchmark
+│   ├── cliente.py                   # Cliente MCP puro demonstrando descoberta e RBAC
+│   └── executar_benchmark.py        # Orquestrador automatizado de benchmark sobre os gabaritos
 │
-└── tests/                     # Suíte de testes automatizados e integrados
-    ├── test_coordenador.py    # Testes automatizados do Coordenador com pytest
-    ├── test_plano_executor.py # Testes automatizados do Plano-Executor com pytest
-    ├── test_conversa_grupo.py # Testes automatizados da Conversação em Grupo (AutoGen)
-    ├── test_mcp_toolkit.py    # Testes do cliente/servidor MCP e sanitização
-    ├── teste_banco.py         # Script utilitário para validar banco e embeddings
-    ├── teste_coordenador.py   # Script de demonstração passo a passo do Coordenador
-    ├── teste_plano_executor.py # Script de demonstração passo a passo do Plano-Executor
-    └── teste_conversa_grupo.py # Script de demonstração da Conversação em Grupo
+└── tests/                           # Suíte de testes automatizados (pytest) e demos manuais
+    ├── test_coordenador.py          # Testes automatizados do Coordenador
+    ├── test_plano_executor.py       # Testes automatizados do Plano–Executor
+    ├── test_conversa_grupo.py       # Testes automatizados da Conversação em Grupo
+    ├── test_mcp_toolkit.py          # Testes de contrato MCP, JWT, citações e revogação
+    ├── test_observabilidade.py      # Testes de telemetria SQLite e cálculos FinOps
+    ├── test_avaliador.py            # Testes do LLM-as-a-Judge e guardrail RBAC
+    ├── test_golden_dataset.py       # Validação de integridade do Golden Dataset
+    ├── test_ragbench.py             # Testes do carregador e estratificação RAGBench
+    ├── test_benchmark_pipeline.py   # Testes do pipeline automatizado de benchmark
+    ├── test_ui_app.py               # Verificação estrutural da aplicação Streamlit
+    ├── resiliencia/                 # Bateria de Engenharia do Caos (MCP, JWT, banco e injection)
+    └── teste_*.py                   # Scripts manuais de demonstração (banco e os 3 padrões)
 ```
 
 ---
@@ -105,7 +123,7 @@ O projeto adota uma arquitetura híbrida projetada para contornar restrições d
 
 Clone o repositório e crie o ambiente virtual:
 ```bash
-git clone <URL_DO_REPOSITORIO>
+git clone https://github.com/georghls/agents-architecture.git
 cd agents-architecture
 
 python -m venv .venv
@@ -211,11 +229,27 @@ A suíte valida:
 
 ## 📚 Documentação Técnica Adicional
 
+### Relatórios Principais e Resultados
+- [Relatório Técnico Final Consolidado (Fases 1 a 5)](docs/relatorio_tecnico_final.md)
+- [Relatório Experimental — Benchmark `galileo-ai/ragbench`](docs/experimento-ragbench.md)
+- [Registro de Decisões Arquiteturais (ADRs D-001 a D-027)](docs/decisions.md)
+
+### Arquitetura, Protocolo MCP e LLMOps
+- [Escopo e Metodologia do Estudo Dirigido](docs/estudo-dirigido.md)
+- [Fronteiras e Componentes Arquiteturais](docs/architecture.md)
+- [Integração MCP: Arquitetura, Contratos e Segurança](docs/mcp.md)
+- [Comparativo dos Três Padrões Multiagentes](docs/multi-agent.md)
+- [Observabilidade, Avaliação e Resiliência (LLMOps)](docs/llmops.md)
+- [Diagramas Visuais (Mermaid)](docs/diagramas/README.md)
+
+### Relatórios Técnicos por Padrão (Fase 3)
+- [Índice do Módulo de Agentes](docs/agentes/README.md)
 - [Relatório Técnico do Agente Coordenador](docs/agentes/coordenador.md)
 - [Relatório Técnico do Agente Plano–Executor](docs/agentes/plano_executor.md)
 - [Relatório Técnico do Agente Conversação em Grupo](docs/agentes/conversa_grupo.md)
-- [Registro de Decisões Arquiteturais (ADRs)](docs/decisions.md)
-- [Fronteiras e Componentes Arquiteturais](docs/architecture.md)
-- [Planejamento da Fase 3: Multiagentes](docs/fase-3-planejamento.md)
-- [Diagramas Visuais (Mermaid)](docs/diagramas/README.md)
+
+### Registros Históricos das Fases
+- [Plano e Evidências da Fase 2 (MCP)](docs/fase-2.md)
+- [Relatório de Dados e Persistência (Fase 2)](docs/relatorio_fase2_dados.md)
+- [Planejamento Inicial da Fase 3 (Multiagentes)](docs/fase-3-planejamento.md)
 
