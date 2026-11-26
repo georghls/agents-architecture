@@ -214,7 +214,7 @@ def test_coordenador_validador_node_bloqueia_vazamento():
     assert "messages" in atualizacao
     nova_msg = atualizacao["messages"][-1].content
     assert "50 milhões" not in nova_msg
-    assert "não constam" in nova_msg.lower()
+    assert "no authorized information" in nova_msg.lower() or "não constam" in nova_msg.lower()
 
 
 def test_plano_executor_replanejamento_limitado_em_falha_transitoria():
@@ -265,7 +265,7 @@ def test_citacao_estruturada_e_revogacao_documento(monkeypatch):
     assert citacao_curta == " [manual.md | v1 | chunk 2]"
 
     citacao_longa = _formatar_citacao("manual.md", "v2", 1, formato_curto=False)
-    assert citacao_longa == " (Origem: manual.md | v2 | chunk 1)"
+    assert citacao_longa == " (Source: manual.md | v2 | chunk 1)"
 
     with pytest.raises(ValueError):
         ingestao.revogar_documento("   ")

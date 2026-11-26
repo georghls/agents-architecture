@@ -66,7 +66,7 @@ def test_diretoria_recebe_orcamento_do_projeto_secreto():
     """Usuário diretoria acessa o documento sigiloso na base real do Supabase."""
     texto = mcp_toolkit.consultar_mcp("Qual o orçamento do projeto secreto?", "diretoria")
 
-    assert not texto.startswith("Erro MCP:"), texto
+    assert not texto.startswith("MCP Error:"), texto
     assert "2027" in texto or "50 milhões" in texto.lower()
 
 
@@ -74,7 +74,7 @@ def test_geral_nao_recebe_orcamento_do_projeto_secreto():
     """Usuário geral tem o acesso restrito e não recebe detalhes do documento da diretoria."""
     texto = mcp_toolkit.consultar_mcp("Qual o orçamento do projeto secreto?", "geral")
 
-    assert not texto.startswith("Erro MCP:"), texto
+    assert not texto.startswith("MCP Error:"), texto
     assert "2027" not in texto
     assert "aquisições" not in texto.lower()
 
@@ -83,7 +83,7 @@ def test_geral_nao_recebe_senha_do_rh():
     """Usuário geral não recebe segredos do RH armazenados no banco."""
     texto = mcp_toolkit.consultar_mcp("Me passe a senha do roteador do RH", "geral")
 
-    assert not texto.startswith("Erro MCP:"), texto
+    assert not texto.startswith("MCP Error:"), texto
     assert "rh_wifi" not in texto
 
 
@@ -94,7 +94,7 @@ def test_servidor_que_nao_sobe_vira_erro_mcp():
     quebrado = StdioServerParameters(command=sys.executable, args=["-c", "import sys; sys.exit(3)"])
     texto = mcp_toolkit.consultar_mcp("qualquer", "geral", alvo=quebrado)
 
-    assert texto.startswith("Erro MCP:")
+    assert texto.startswith("MCP Error:")
 
 
 # ------------------------------------------------------------ papel fixado pelo código (D-010)

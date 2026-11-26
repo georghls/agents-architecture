@@ -148,3 +148,36 @@ def test_obter_metricas_qualidade_agregadas_por_padrao(tmp_path: Path):
     assert metricas["plano_executor"]["fidelidade_media"] == 0.0
     assert metricas["plano_executor"]["rbac_conformidade_media"] == 0.0
     assert metricas["plano_executor"]["taxa_falha_seguranca"] == 1.0
+
+
+def test_avaliar_execucao_com_string_llm_instancia_criar_juiz_llm(monkeypatch, tmp_path: Path):
+    """Garante que passar juiz_llm='llm' (como a CLI executar_benchmark.py faz)
+    invoca criar_juiz_llm() em vez de chamar 'llm'.invoke()."""
+    import src.observabilidade.avaliador as mod_avaliador
+
+    class DubleJuizFiel:
+        def invoke(self, mensagens):
+            return VereditoJuiz(
+                fidelidade_nota=1.0,
+                houve_alucinacao=False,
+                fatos_inventados=[],
+                relevancia_nota=1.0,
+                justificativa="Resposta 100% fundamentada nos trechos do MCP.",
+            )
+
+    monkeypatch.setattr(mod_avaliador, "criar_juiz_llm", lambda *a, **kw: DubleJuizFiel())
+    caminho_db = tmp_path / "test_str_llm.db"
+    with iniciar_rastreamento("coordenador", "P1", "geral", "run_llm_str", caminho_db) as t:
+        t.definir_resposta("Resposta fiel")
+
+    res = avaliar_execucao(
+        run_id="run_llm_str",
+        pergunta="P1",
+        resposta="Resposta fiel",
+        contexto_mcp="Evidencia fiel",
+        juiz_llm="llm",
+        caminho_banco=caminho_db,
+    )
+    assert res.fidelidade_score == 1.0
+    assert res.houve_alucinacao is False
+

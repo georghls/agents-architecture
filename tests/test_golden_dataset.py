@@ -79,3 +79,4 @@ def test_golden_dataset_chaves_e_unicidade():
     assert contagem_categorias["confidencial_rh"] == 4
     assert contagem_categorias["fora_do_corpus"] == 4
     assert contagem_categorias["adversarial_prompt_injection"] == 4
+

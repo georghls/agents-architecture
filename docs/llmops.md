@@ -48,4 +48,7 @@ Exibir série temporal, percentis de latência, custo estimado, chamadas MCP/LLM
    - 10 testes automatizados cobrindo transporte MCP, tokens forjados/expirados, queda de banco PostgreSQL e injeção de prompt direta/indireta.
 5. **Interface de Usuário e Dashboard (`src/ui/app.py`)**:
    - Aplicação unificada em Streamlit com aba de Chat interativo e aba de Dashboard analítico com gráficos comparativos em Plotly.
+6. **Validação Experimental em Benchmark Público (`docs/experimento-ragbench.md`)**:
+   - Registro detalhado das três baterias de benchmark executadas sobre a amostra estratificada de documentos robustos do **`galileo-ai/ragbench`** (`techqa` $\rightarrow$ `geral`, `cuad` $\rightarrow$ `rh`, `finqa` $\rightarrow$ `diretoria`), documentando métricas de latência, tokens, custo e achados arquiteturais.
+
 

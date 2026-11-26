@@ -28,8 +28,8 @@ def test_falha_transporte_mcp_vira_erro_amigavel():
         alvo=alvo_ficticio,
     )
 
-    assert "Erro MCP:" in resultado
-    assert "não foi possível consultar o servidor" in resultado
+    assert "MCP Error:" in resultado
+    assert "could not query the document server" in resultado
 
 
 def test_coordenador_com_mcp_indisponivel_degrada_graciosamente():
@@ -48,12 +48,12 @@ def test_coordenador_com_mcp_indisponivel_degrada_graciosamente():
 
         def invoke(self, mensagens):
             conteudo = " ".join(str(getattr(m, "content", "")) for m in mensagens)
-            if "Erro MCP" in conteudo:
-                return AIMessage(content="Lamentamos, mas o serviço de documentos está temporariamente indisponível.")
-            return AIMessage(content="Resposta normal.")
+            if "MCP Error" in conteudo or "Erro MCP" in conteudo:
+                return AIMessage(content="Sorry, the document service is temporarily unavailable.")
+            return AIMessage(content="Normal response.")
 
     with patch("src.agentes.coordenador.llm", DubleLLM()), \
-         patch("src.agentes.mcp_toolkit.consultar_mcp", return_value="Erro MCP: não foi possível consultar o servidor de documentos."):
+         patch("src.agentes.mcp_toolkit.consultar_mcp", return_value="MCP Error: could not query the document server."):
 
         estado_inicial: EstadoCoordenador = {
             "role": "geral",
@@ -66,4 +66,4 @@ def test_coordenador_com_mcp_indisponivel_degrada_graciosamente():
         resultado = grafo_coordenador.invoke(estado_inicial)
         texto_final = _extrair_texto(resultado["messages"][-1])
 
-        assert "temporariamente indisponível" in texto_final
+        assert "temporarily unavailable" in texto_final

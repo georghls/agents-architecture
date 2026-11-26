@@ -162,7 +162,7 @@ def popular_banco():
     novos_inseridos = 0
     ja_existentes = 0
 
-    with psycopg.connect(url_banco()) as conexao:
+    with psycopg.connect(url_banco(), prepare_threshold=None) as conexao:
         with conexao.cursor() as cursor:
             for doc in todos_documentos:
                 texto_doc = doc["texto"]
@@ -213,7 +213,7 @@ def revogar_documento(nome_documento: str, versao: str | None = None) -> int:
         raise ValueError("O nome do documento é obrigatório para revogação.")
 
     doc_limpo = nome_documento.strip()
-    with psycopg.connect(url_banco()) as conexao:
+    with psycopg.connect(url_banco(), prepare_threshold=None) as conexao:
         with conexao.cursor() as cursor:
             if versao:
                 sql = """

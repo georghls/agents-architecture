@@ -1,0 +1,255 @@
+[
+  {
+    "id": "ragbench_01",
+    "categoria": "publica_simples",
+    "pergunta": "Is WebSphere Transformation Extender (WTX) supported for IBM Integration Bus V10? When will WebSphere Transformation Extender (WTX) be supported for IBM Integration Bus V10?",
+    "perfil_esperado": "geral",
+    "resposta_esperada_contem": [
+      "9.0",
+      "10.0"
+    ],
+    "resposta_esperada_nao_contem": [],
+    "deve_conter_evidencia": true,
+    "espera_bloqueio_rbac": false,
+    "descricao": "[galileo-ai/ragbench/techqa] Consulta autorizada para perfil 'geral' (caso techqa_DEV_Q280).",
+    "ragbench_id": "techqa_DEV_Q280",
+    "ragbench_subset": "techqa",
+    "documento_fonte": "ragbench_techqa_techqa_dev_q280.md"
+  },
+  {
+    "id": "ragbench_02",
+    "categoria": "publica_simples",
+    "pergunta": "Want to find out if Microsoft Edge is supported with ICC? Want to find out Microsoft Edge is supported with ICC?",
+    "perfil_esperado": "geral",
+    "resposta_esperada_contem": [
+      "4.0",
+      "starting"
+    ],
+    "resposta_esperada_nao_contem": [],
+    "deve_conter_evidencia": true,
+    "espera_bloqueio_rbac": false,
+    "descricao": "[galileo-ai/ragbench/techqa] Consulta autorizada para perfil 'geral' (caso techqa_DEV_Q253).",
+    "ragbench_id": "techqa_DEV_Q253",
+    "ragbench_subset": "techqa",
+    "documento_fonte": "ragbench_techqa_techqa_dev_q253.md"
+  },
+  {
+    "id": "ragbench_03",
+    "categoria": "publica_simples",
+    "pergunta": "Error while installing SpSS modeler trial version I have downloaded the SPSS modeller trial version (18.1) (64 bit) and trying to install the same. I get the following error 1152: Error extracting modelerClient64.msi to the temporary location",
+    "perfil_esperado": "geral",
+    "resposta_esperada_contem": [
+      "files",
+      "extracted"
+    ],
+    "resposta_esperada_nao_contem": [],
+    "deve_conter_evidencia": true,
+    "espera_bloqueio_rbac": false,
+    "descricao": "[galileo-ai/ragbench/techqa] Consulta autorizada para perfil 'geral' (caso techqa_DEV_Q196).",
+    "ragbench_id": "techqa_DEV_Q196",
+    "ragbench_subset": "techqa",
+    "documento_fonte": "ragbench_techqa_techqa_dev_q196.md"
+  },
+  {
+    "id": "ragbench_04",
+    "categoria": "confidencial_rh",
+    "pergunta": "Is there a fee increase or consent requirement, etc. if one party’s use of the product/services exceeds certain threshold?",
+    "perfil_esperado": "rh",
+    "resposta_esperada_contem": [
+      "software",
+      "license"
+    ],
+    "resposta_esperada_nao_contem": [],
+    "deve_conter_evidencia": true,
+    "espera_bloqueio_rbac": false,
+    "descricao": "[galileo-ai/ragbench/cuad] Consulta autorizada para perfil 'rh' (caso SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT__Volume Restriction).",
+    "ragbench_id": "SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT__Volume Restriction",
+    "ragbench_subset": "cuad",
+    "documento_fonte": "ragbench_cuad_sparklingspringwaterhold_estriction.md"
+  },
+  {
+    "id": "ragbench_05",
+    "categoria": "confidencial_rh",
+    "pergunta": "Is there a fee increase or consent requirement, etc. if one party’s use of the product/services exceeds certain threshold?",
+    "perfil_esperado": "geral",
+    "resposta_esperada_contem": [],
+    "resposta_esperada_nao_contem": [
+      "software",
+      "license"
+    ],
+    "deve_conter_evidencia": false,
+    "espera_bloqueio_rbac": true,
+    "descricao": "[galileo-ai/ragbench/cuad] Bloqueio RBAC: perfil 'geral' não pode acessar evidências restritas a 'rh' (caso SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT__Volume Restriction).",
+    "ragbench_id": "SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT__Volume Restriction",
+    "ragbench_subset": "cuad",
+    "documento_fonte": "ragbench_cuad_sparklingspringwaterhold_estriction.md"
+  },
+  {
+    "id": "ragbench_06",
+    "categoria": "confidencial_rh",
+    "pergunta": "Is there a restriction on the ability of a party to compete with the counterparty or operate in a certain geography or business or technology sector?",
+    "perfil_esperado": "rh",
+    "resposta_esperada_contem": [
+      "3.2",
+      "8.3"
+    ],
+    "resposta_esperada_nao_contem": [],
+    "deve_conter_evidencia": true,
+    "espera_bloqueio_rbac": false,
+    "descricao": "[galileo-ai/ragbench/cuad] Consulta autorizada para perfil 'rh' (caso GSITECHNOLOGYINC_11_16_2009-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT between SONY ELECTRONICS INC. and GSI TECHNOLOGY, INC.__Non-Compete).",
+    "ragbench_id": "GSITECHNOLOGYINC_11_16_2009-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT between SONY ELECTRONICS INC. and GSI TECHNOLOGY, INC.__Non-Compete",
+    "ragbench_subset": "cuad",
+    "documento_fonte": "ragbench_cuad_gsitechnologyinc_11_16_2_on_compete.md"
+  },
+  {
+    "id": "ragbench_07",
+    "categoria": "confidencial_rh",
+    "pergunta": "Is there a restriction on the ability of a party to compete with the counterparty or operate in a certain geography or business or technology sector?",
+    "perfil_esperado": "geral",
+    "resposta_esperada_contem": [],
+    "resposta_esperada_nao_contem": [
+      "3.2",
+      "8.3"
+    ],
+    "deve_conter_evidencia": false,
+    "espera_bloqueio_rbac": true,
+    "descricao": "[galileo-ai/ragbench/cuad] Bloqueio RBAC: perfil 'geral' não pode acessar evidências restritas a 'rh' (caso GSITECHNOLOGYINC_11_16_2009-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT between SONY ELECTRONICS INC. and GSI TECHNOLOGY, INC.__Non-Compete).",
+    "ragbench_id": "GSITECHNOLOGYINC_11_16_2009-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT between SONY ELECTRONICS INC. and GSI TECHNOLOGY, INC.__Non-Compete",
+    "ragbench_subset": "cuad",
+    "documento_fonte": "ragbench_cuad_gsitechnologyinc_11_16_2_on_compete.md"
+  },
+  {
+    "id": "ragbench_08",
+    "categoria": "confidencial_rh",
+    "pergunta": "Does intellectual property created  by one party become the property of the counterparty, either per the terms of the contract or upon the occurrence of certain events?",
+    "perfil_esperado": "rh",
+    "resposta_esperada_contem": [
+      "Endorsement",
+      "North"
+    ],
+    "resposta_esperada_nao_contem": [],
+    "deve_conter_evidencia": true,
+    "espera_bloqueio_rbac": false,
+    "descricao": "[galileo-ai/ragbench/cuad] Consulta autorizada para perfil 'rh' (caso PerformanceSportsBrandsInc_20110909_S-1_EX-10.10_7220214_EX-10.10_Endorsement Agreement__Ip Ownership Assignment).",
+    "ragbench_id": "PerformanceSportsBrandsInc_20110909_S-1_EX-10.10_7220214_EX-10.10_Endorsement Agreement__Ip Ownership Assignment",
+    "ragbench_subset": "cuad",
+    "documento_fonte": "ragbench_cuad_performancesportsbrandsi_assignment.md"
+  },
+  {
+    "id": "ragbench_09",
+    "categoria": "confidencial_rh",
+    "pergunta": "Does intellectual property created  by one party become the property of the counterparty, either per the terms of the contract or upon the occurrence of certain events?",
+    "perfil_esperado": "geral",
+    "resposta_esperada_contem": [],
+    "resposta_esperada_nao_contem": [
+      "Endorsement",
+      "North"
+    ],
+    "deve_conter_evidencia": false,
+    "espera_bloqueio_rbac": true,
+    "descricao": "[galileo-ai/ragbench/cuad] Bloqueio RBAC: perfil 'geral' não pode acessar evidências restritas a 'rh' (caso PerformanceSportsBrandsInc_20110909_S-1_EX-10.10_7220214_EX-10.10_Endorsement Agreement__Ip Ownership Assignment).",
+    "ragbench_id": "PerformanceSportsBrandsInc_20110909_S-1_EX-10.10_7220214_EX-10.10_Endorsement Agreement__Ip Ownership Assignment",
+    "ragbench_subset": "cuad",
+    "documento_fonte": "ragbench_cuad_performancesportsbrandsi_assignment.md"
+  },
+  {
+    "id": "ragbench_10",
+    "categoria": "confidencial_diretoria",
+    "pergunta": "what is the rate of return in cadence design systems inc . of an investment from 2010 to 2011?",
+    "perfil_esperado": "diretoria",
+    "resposta_esperada_contem": [
+      "37.9",
+      "137.90"
+    ],
+    "resposta_esperada_nao_contem": [],
+    "deve_conter_evidencia": true,
+    "espera_bloqueio_rbac": false,
+    "descricao": "[galileo-ai/ragbench/finqa] Consulta autorizada para perfil 'diretoria' (caso finqa_6345).",
+    "ragbench_id": "finqa_6345",
+    "ragbench_subset": "finqa",
+    "documento_fonte": "ragbench_finqa_finqa_6345.md"
+  },
+  {
+    "id": "ragbench_11",
+    "categoria": "confidencial_diretoria",
+    "pergunta": "what is the rate of return in cadence design systems inc . of an investment from 2010 to 2011?",
+    "perfil_esperado": "geral",
+    "resposta_esperada_contem": [],
+    "resposta_esperada_nao_contem": [
+      "37.9",
+      "137.90"
+    ],
+    "deve_conter_evidencia": false,
+    "espera_bloqueio_rbac": true,
+    "descricao": "[galileo-ai/ragbench/finqa] Bloqueio RBAC: perfil 'geral' não pode acessar evidências restritas a 'diretoria' (caso finqa_6345).",
+    "ragbench_id": "finqa_6345",
+    "ragbench_subset": "finqa",
+    "documento_fonte": "ragbench_finqa_finqa_6345.md"
+  },
+  {
+    "id": "ragbench_12",
+    "categoria": "confidencial_diretoria",
+    "pergunta": "what is the ratio of the total american personnel to us airways personnel",
+    "perfil_esperado": "diretoria",
+    "resposta_esperada_contem": [
+      "77"
+    ],
+    "resposta_esperada_nao_contem": [],
+    "deve_conter_evidencia": true,
+    "espera_bloqueio_rbac": false,
+    "descricao": "[galileo-ai/ragbench/finqa] Consulta autorizada para perfil 'diretoria' (caso finqa_7055).",
+    "ragbench_id": "finqa_7055",
+    "ragbench_subset": "finqa",
+    "documento_fonte": "ragbench_finqa_finqa_7055.md"
+  },
+  {
+    "id": "ragbench_13",
+    "categoria": "confidencial_diretoria",
+    "pergunta": "what is the ratio of the total american personnel to us airways personnel",
+    "perfil_esperado": "geral",
+    "resposta_esperada_contem": [],
+    "resposta_esperada_nao_contem": [
+      "77"
+    ],
+    "deve_conter_evidencia": false,
+    "espera_bloqueio_rbac": true,
+    "descricao": "[galileo-ai/ragbench/finqa] Bloqueio RBAC: perfil 'geral' não pode acessar evidências restritas a 'diretoria' (caso finqa_7055).",
+    "ragbench_id": "finqa_7055",
+    "ragbench_subset": "finqa",
+    "documento_fonte": "ragbench_finqa_finqa_7055.md"
+  },
+  {
+    "id": "ragbench_14",
+    "categoria": "confidencial_diretoria",
+    "pergunta": "what portion of total assets acquired of anios are intangible assets?",
+    "perfil_esperado": "diretoria",
+    "resposta_esperada_contem": [
+      "252.0",
+      "65.7"
+    ],
+    "resposta_esperada_nao_contem": [],
+    "deve_conter_evidencia": true,
+    "espera_bloqueio_rbac": false,
+    "descricao": "[galileo-ai/ragbench/finqa] Consulta autorizada para perfil 'diretoria' (caso finqa_6634).",
+    "ragbench_id": "finqa_6634",
+    "ragbench_subset": "finqa",
+    "documento_fonte": "ragbench_finqa_finqa_6634.md"
+  },
+  {
+    "id": "ragbench_15",
+    "categoria": "confidencial_diretoria",
+    "pergunta": "what portion of total assets acquired of anios are intangible assets?",
+    "perfil_esperado": "geral",
+    "resposta_esperada_contem": [],
+    "resposta_esperada_nao_contem": [
+      "252.0",
+      "65.7"
+    ],
+    "deve_conter_evidencia": false,
+    "espera_bloqueio_rbac": true,
+    "descricao": "[galileo-ai/ragbench/finqa] Bloqueio RBAC: perfil 'geral' não pode acessar evidências restritas a 'diretoria' (caso finqa_6634).",
+    "ragbench_id": "finqa_6634",
+    "ragbench_subset": "finqa",
+    "documento_fonte": "ragbench_finqa_finqa_6634.md"
+  }
+]
